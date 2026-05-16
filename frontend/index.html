@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-950">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOLOlizer — Local YOLO Trainer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+    /* Canvas cursor */
+    #annotCanvas { cursor: crosshair; }
+    #annotCanvas.mode-select { cursor: default; }
+
+    /* Log terminal */
+    #logTerminal {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Drag-over highlight */
+    .drag-over { border-color: #6366f1 !important; background-color: rgba(99,102,241,0.08); }
+
+    /* Active nav item */
+    .nav-item.active { background-color: #312e81; color: #a5b4fc; }
+
+    /* Thumbnail */
+    .thumb-item.selected { ring: 2px; ring-color: #6366f1; outline: 2px solid #6366f1; }
+
+    /* Annotation color swatches */
+    .class-color { width: 14px; height: 14px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+
+    /* Blinking cursor for terminal */
+    @keyframes blink { 50% { opacity: 0; } }
+    .cursor-blink { animation: blink 1s step-end infinite; }
+  </style>
+</head>
+<body class="h-full flex flex-col text-gray-100 bg-gray-950" x-data>
+
+<!-- ===== TOP BAR ===== -->
+<header class="flex items-center gap-3 px-5 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
+  <svg class="w-7 h-7 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round"
+      d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+  </svg>
+  <span class="text-lg font-bold tracking-tight text-white">YOLOlizer</span>
+  <span class="ml-2 text-xs text-gray-500 font-mono">local yolo trainer</span>
+  <div class="ml-auto flex items-center gap-2 text-xs text-gray-500">
+    <span id="healthDot" class="w-2 h-2 rounded-full bg-gray-600 inline-block"></span>
+    <span id="healthLabel">connecting…</span>
+  </div>
+</header>
+
+<!-- ===== MAIN LAYOUT ===== -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- Sidebar nav -->
+  <nav class="w-48 bg-gray-900 border-r border-gray-800 flex flex-col py-4 gap-1 shrink-0">
+    <button onclick="showTab('sources')" id="nav-sources"
+      class="nav-item active flex items-center gap-3 px-4 py-2.5 rounded-lg mx-2 text-sm font-medium transition-colors hover:bg-gray-800">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+      </svg>
+      Data Sources
+    </button>
+    <button onclick="showTab('annotate')" id="nav-annotate"
+      class="nav-item flex items-center gap-3 px-4 py-2.5 rounded-lg mx-2 text-sm font-medium transition-colors hover:bg-gray-800 text-gray-400">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+      </svg>
+      Annotate
+    </button>
+    <button onclick="showTab('train')" id="nav-train"
+      class="nav-item flex items-center gap-3 px-4 py-2.5 rounded-lg mx-2 text-sm font-medium transition-colors hover:bg-gray-800 text-gray-400">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+      Train
+    </button>
+    <button onclick="showTab('models')" id="nav-models"
+      class="nav-item flex items-center gap-3 px-4 py-2.5 rounded-lg mx-2 text-sm font-medium transition-colors hover:bg-gray-800 text-gray-400">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+      </svg>
+      Models
+    </button>
+  </nav>
+
+  <!-- Content area -->
+  <main class="flex-1 overflow-hidden flex flex-col">
+
+    <!-- ======================================================= -->
+    <!-- TAB: DATA SOURCES                                         -->
+    <!-- ======================================================= -->
+    <div id="tab-sources" class="flex flex-col flex-1 overflow-y-auto p-6 gap-6">
+      <h2 class="text-xl font-semibold text-white">Data Sources</h2>
+
+      <!-- Image upload -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <h3 class="font-medium text-gray-200 mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          Upload Images
+        </h3>
+        <div id="imgDropZone"
+          class="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center cursor-pointer transition-colors hover:border-indigo-500"
+          onclick="document.getElementById('imgFileInput').click()"
+          ondragover="handleDragOver(event,'imgDropZone')"
+          ondragleave="handleDragLeave(event,'imgDropZone')"
+          ondrop="handleImageDrop(event)">
+          <svg class="w-10 h-10 text-gray-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+          <p class="text-gray-400 text-sm">Drag &amp; drop images here, or <span class="text-indigo-400 underline">click to browse</span></p>
+          <p class="text-gray-600 text-xs mt-1">JPG, PNG, BMP, TIFF, WEBP</p>
+        </div>
+        <input id="imgFileInput" type="file" multiple accept="image/*" class="hidden" onchange="uploadImages(this.files)" />
+        <div id="imgUploadStatus" class="mt-2 text-sm text-gray-400"></div>
+        <!-- Thumbnail gallery -->
+        <div id="imgGallery" class="mt-4 grid grid-cols-6 gap-2"></div>
+        <div id="imgCount" class="mt-2 text-xs text-gray-500"></div>
+      </div>
+
+      <!-- Video upload -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <h3 class="font-medium text-gray-200 mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+          </svg>
+          Upload Video (Extract Frames)
+        </h3>
+        <div class="flex gap-3 items-end flex-wrap">
+          <div>
+            <label class="text-xs text-gray-500 block mb-1">Video file</label>
+            <input id="videoFileInput" type="file" accept="video/*"
+              class="text-sm text-gray-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-indigo-700 file:text-white file:cursor-pointer cursor-pointer" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-500 block mb-1">Every N frames</label>
+            <input id="frameInterval" type="number" value="30" min="1" max="1000"
+              class="w-20 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200" />
+          </div>
+          <button onclick="uploadVideo()"
+            class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded transition-colors">
+            Extract Frames
+          </button>
+        </div>
+        <div id="videoStatus" class="mt-3 text-sm text-gray-400"></div>
+      </div>
+
+      <!-- Webcam -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <h3 class="font-medium text-gray-200 mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+          </svg>
+          Webcam
+        </h3>
+        <div class="flex gap-3 mb-3">
+          <button id="startWebcamBtn" onclick="toggleWebcam()"
+            class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded transition-colors">
+            Start Webcam
+          </button>
+          <button onclick="captureWebcam()"
+            class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded transition-colors">
+            Capture Frame
+          </button>
+        </div>
+        <div id="webcamPreviewWrap" class="hidden">
+          <img id="webcamPreview" src="" alt="Webcam" class="rounded-lg border border-gray-700 max-h-64" />
+        </div>
+        <div id="webcamStatus" class="mt-2 text-sm text-gray-400"></div>
+      </div>
+    </div><!-- /tab-sources -->
+
+    <!-- ======================================================= -->
+    <!-- TAB: ANNOTATE                                             -->
+    <!-- ======================================================= -->
+    <div id="tab-annotate" class="hidden flex flex-1 overflow-hidden">
+
+      <!-- Left: image list -->
+      <div class="w-44 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
+        <div class="px-3 py-2 border-b border-gray-800 text-xs font-semibold text-gray-400 uppercase tracking-wide">Images</div>
+        <div id="annotImageList" class="flex-1 overflow-y-auto p-1 gap-1 flex flex-col"></div>
+        <div class="px-3 py-2 border-t border-gray-800">
+          <button onclick="refreshAnnotImages()"
+            class="w-full text-xs py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 transition-colors">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Center: canvas -->
+      <div class="flex-1 flex flex-col overflow-hidden bg-gray-950">
+        <!-- Canvas toolbar -->
+        <div class="flex items-center gap-2 px-4 py-2 border-b border-gray-800 bg-gray-900 shrink-0">
+          <span class="text-xs text-gray-500 mr-1">Mode:</span>
+          <button id="btnBbox" onclick="setAnnotMode('bbox')"
+            class="px-3 py-1 text-xs rounded bg-indigo-600 text-white transition-colors">BBox</button>
+          <button id="btnPoly" onclick="setAnnotMode('polygon')"
+            class="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">Polygon</button>
+          <div class="w-px h-4 bg-gray-700 mx-1"></div>
+          <button onclick="deleteSelectedAnnot()"
+            class="px-3 py-1 text-xs rounded bg-red-800 hover:bg-red-700 text-white transition-colors">Delete</button>
+          <button onclick="clearAnnotations()"
+            class="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">Clear All</button>
+          <div class="ml-auto text-xs text-gray-500" id="annotImageName">No image selected</div>
+        </div>
+        <!-- Canvas wrapper -->
+        <div class="flex-1 overflow-auto flex items-center justify-center p-4 bg-gray-950">
+          <div class="relative">
+            <canvas id="annotCanvas" class="border border-gray-700 rounded-lg shadow-xl max-w-full"
+              onmousedown="canvasMouseDown(event)"
+              onmousemove="canvasMouseMove(event)"
+              onmouseup="canvasMouseUp(event)"
+              ondblclick="canvasDblClick(event)">
+            </canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: classes + annotations -->
+      <div class="w-56 bg-gray-900 border-l border-gray-800 flex flex-col shrink-0">
+        <!-- Class management -->
+        <div class="px-3 py-2 border-b border-gray-800">
+          <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Classes</div>
+          <div id="classList" class="flex flex-col gap-1 mb-2 max-h-40 overflow-y-auto"></div>
+          <div class="flex gap-1">
+            <input id="newClassName" type="text" placeholder="New class…"
+              class="flex-1 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+              onkeydown="if(event.key==='Enter') addClass()" />
+            <button onclick="addClass()"
+              class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded transition-colors">+</button>
+          </div>
+        </div>
+        <!-- Annotation list -->
+        <div class="flex-1 overflow-y-auto px-3 py-2">
+          <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Annotations</div>
+          <div id="annotList" class="flex flex-col gap-1"></div>
+        </div>
+        <!-- Selected class indicator -->
+        <div class="px-3 py-2 border-t border-gray-800">
+          <div class="text-xs text-gray-500 mb-1">Active class:</div>
+          <div id="activeClassBadge" class="text-xs px-2 py-1 rounded bg-gray-800 text-gray-300 font-mono">none selected</div>
+        </div>
+      </div>
+    </div><!-- /tab-annotate -->
+
+    <!-- ======================================================= -->
+    <!-- TAB: TRAIN                                               -->
+    <!-- ======================================================= -->
+    <div id="tab-train" class="hidden flex flex-col flex-1 overflow-y-auto p-6 gap-6">
+      <h2 class="text-xl font-semibold text-white">Training Configuration</h2>
+
+      <div class="grid grid-cols-2 gap-6">
+        <!-- Config form -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col gap-4">
+          <!-- Task -->
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Task</label>
+            <div class="grid grid-cols-4 gap-2">
+              <label class="task-btn cursor-pointer" data-task="detect">
+                <input type="radio" name="task" value="detect" class="sr-only" checked />
+                <div class="flex flex-col items-center gap-1 p-2 rounded-lg border border-indigo-500 bg-indigo-900/30 text-center transition-colors">
+                  <span class="text-lg">🎯</span>
+                  <span class="text-xs font-medium text-indigo-300">detect</span>
+                </div>
+              </label>
+              <label class="task-btn cursor-pointer" data-task="segment">
+                <input type="radio" name="task" value="segment" class="sr-only" />
+                <div class="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-700 hover:border-indigo-600 text-center transition-colors">
+                  <span class="text-lg">🔷</span>
+                  <span class="text-xs font-medium text-gray-400">segment</span>
+                </div>
+              </label>
+              <label class="task-btn cursor-pointer" data-task="classify">
+                <input type="radio" name="task" value="classify" class="sr-only" />
+                <div class="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-700 hover:border-indigo-600 text-center transition-colors">
+                  <span class="text-lg">🏷️</span>
+                  <span class="text-xs font-medium text-gray-400">classify</span>
+                </div>
+              </label>
+              <label class="task-btn cursor-pointer" data-task="pose">
+                <input type="radio" name="task" value="pose" class="sr-only" />
+                <div class="flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-700 hover:border-indigo-600 text-center transition-colors">
+                  <span class="text-lg">🦴</span>
+                  <span class="text-xs font-medium text-gray-400">pose</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Model size -->
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Model Size</label>
+            <select id="modelSize" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-200 text-sm">
+              <option value="n">nano — yolov8n (fastest)</option>
+              <option value="s">small — yolov8s</option>
+              <option value="m" selected>medium — yolov8m</option>
+              <option value="l">large — yolov8l</option>
+              <option value="x">xlarge — yolov8x (most accurate)</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">Epochs</label>
+              <input id="trainEpochs" type="number" value="50" min="1" max="1000"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">Image Size</label>
+              <input id="trainImgsz" type="number" value="640" min="32" max="1920" step="32"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">Batch Size (-1 = auto)</label>
+              <input id="trainBatch" type="number" value="16" min="-1"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">Learning Rate</label>
+              <input id="trainLr" type="number" value="0.01" min="0.0001" max="1" step="0.001"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Project / Run Name</label>
+            <input id="trainProjectName" type="text" value="yololizer_run"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+          </div>
+
+          <div class="flex gap-3 pt-1">
+            <button id="startTrainBtn" onclick="startTraining()"
+              class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg transition-colors text-sm">
+              Start Training
+            </button>
+            <button onclick="stopTraining()"
+              class="px-4 py-2.5 bg-red-700 hover:bg-red-600 text-white font-medium rounded-lg transition-colors text-sm">
+              Stop
+            </button>
+          </div>
+        </div>
+
+        <!-- Live metrics cards -->
+        <div class="flex flex-col gap-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</div>
+              <div id="trainStatusBadge" class="text-sm font-semibold text-gray-300">idle</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Epoch</div>
+              <div id="trainEpochDisplay" class="text-sm font-semibold text-gray-300">—</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Box Loss</div>
+              <div id="metricBoxLoss" class="text-sm font-semibold text-emerald-400">—</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Cls Loss</div>
+              <div id="metricClsLoss" class="text-sm font-semibold text-amber-400">—</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">mAP50</div>
+              <div id="metricMap50" class="text-sm font-semibold text-indigo-400">—</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Elapsed</div>
+              <div id="metricElapsed" class="text-sm font-semibold text-gray-300">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log terminal -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 flex flex-col overflow-hidden" style="min-height:240px;max-height:420px;">
+        <div class="px-4 py-2 border-b border-gray-800 flex items-center justify-between">
+          <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Training Log</span>
+          <button onclick="clearLog()" class="text-xs text-gray-600 hover:text-gray-400 transition-colors">Clear</button>
+        </div>
+        <div id="logTerminal" class="flex-1 overflow-y-auto p-3 text-green-400 bg-gray-950 text-xs leading-5"></div>
+      </div>
+    </div><!-- /tab-train -->
+
+    <!-- ======================================================= -->
+    <!-- TAB: MODELS                                              -->
+    <!-- ======================================================= -->
+    <div id="tab-models" class="hidden flex flex-col flex-1 overflow-y-auto p-6 gap-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold text-white">Trained Models</h2>
+        <button onclick="loadModels()"
+          class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+          Refresh
+        </button>
+      </div>
+      <div id="modelsList" class="flex flex-col gap-4"></div>
+      <!-- Chart -->
+      <div id="metricsChartSection" class="hidden bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-medium text-gray-200" id="chartTitle">Metrics Chart</h3>
+          <button onclick="document.getElementById('metricsChartSection').classList.add('hidden')"
+            class="text-xs text-gray-600 hover:text-gray-400">Close</button>
+        </div>
+        <canvas id="metricsChart" height="120"></canvas>
+      </div>
+    </div><!-- /tab-models -->
+
+  </main>
+</div><!-- /main layout -->
+
+<!-- ===================================================== -->
+<!-- JAVASCRIPT                                            -->
+<!-- ===================================================== -->
+<script>
+'use strict';
+
+// =========================================================
+// Global state
+// =========================================================
+const API = '';  // same origin
+
+let currentTab = 'sources';
+
+// Annotation state
+let annotImages = [];          // [{filename, is_frame, ...}]
+let currentImage = null;       // filename string
+let currentImageNaturalW = 0;
+let currentImageNaturalH = 0;
+let annotations = [];          // [{class_id, type, bbox:{cx,cy,w,h}, polygon:[[x,y],...]}]
+let selectedAnnotIdx = -1;
+let annotMode = 'bbox';        // 'bbox' | 'polygon'
+let activeClassIdx = 0;
+
+// Drawing state
+let isDrawing = false;
+let drawStart = null;          // {x,y} in canvas coords
+let polyPoints = [];           // polygon points being built
+let hoverPt = null;            // current mouse position during polygon draw
+
+// Classes
+let classes = [];              // string[]
+const CLASS_COLORS = [
+  '#6366f1','#f59e0b','#10b981','#ef4444','#3b82f6',
+  '#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16',
+];
+
+// Training state
+let sseSource = null;
+let statusPollInterval = null;
+let metricsChart = null;
+
+// =========================================================
+// Utilities
+// =========================================================
+function $(id) { return document.getElementById(id); }
+
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  const colors = { info: 'bg-indigo-700', success: 'bg-emerald-700', error: 'bg-red-700', warn: 'bg-amber-700' };
+  el.className = `fixed bottom-5 right-5 z-50 px-4 py-2 rounded-lg text-white text-sm shadow-lg ${colors[type] || colors.info} transition-opacity`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 3000);
+}
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res;
+}
+
+function formatElapsed(sec) {
+  if (sec == null) return '—';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function classColor(idx) {
+  return CLASS_COLORS[idx % CLASS_COLORS.length];
+}
+
+// =========================================================
+// Health check
+// =========================================================
+async function checkHealth() {
+  try {
+    const res = await fetch(API + '/health');
+    if (res.ok) {
+      $('healthDot').className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block';
+      $('healthLabel').textContent = 'connected';
+    } else throw new Error();
+  } catch {
+    $('healthDot').className = 'w-2 h-2 rounded-full bg-red-400 inline-block';
+    $('healthLabel').textContent = 'offline';
+  }
+}
+
+// =========================================================
+// Tab navigation
+// =========================================================
+function showTab(name) {
+  const tabs = ['sources','annotate','train','models'];
+  tabs.forEach(t => {
+    $(`tab-${t}`).classList.add('hidden');
+    const navEl = $(`nav-${t}`);
+    navEl.classList.remove('active');
+    navEl.classList.add('text-gray-400');
+  });
+  $(`tab-${name}`).classList.remove('hidden');
+  const navEl = $(`nav-${name}`);
+  navEl.classList.add('active');
+  navEl.classList.remove('text-gray-400');
+  currentTab = name;
+
+  if (name === 'annotate') {
+    refreshAnnotImages();
+    loadClasses();
+  } else if (name === 'models') {
+    loadModels();
+  } else if (name === 'sources') {
+    loadGallery();
+  }
+}
+
+// =========================================================
+// DATA SOURCES
+// =========================================================
+function handleDragOver(e, zoneId) {
+  e.preventDefault();
+  $(zoneId).classList.add('drag-over');
+}
+function handleDragLeave(e, zoneId) {
+  $(zoneId).classList.remove('drag-over');
+}
+
+async function handleImageDrop(e) {
+  e.preventDefault();
+  $('imgDropZone').classList.remove('drag-over');
+  const files = e.dataTransfer.files;
+  if (files.length) await uploadImages(files);
+}
+
+async function uploadImages(files) {
+  if (!files || !files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+
+  $('imgUploadStatus').textContent = `Uploading ${files.length} file(s)…`;
+  try {
+    const res = await apiFetch('/api/sources/images', { method: 'POST', body: fd });
+    const data = await res.json();
+    const msg = `Saved: ${data.saved.length}` + (data.errors.length ? `, Errors: ${data.errors.join('; ')}` : '');
+    $('imgUploadStatus').textContent = msg;
+    toast(`Uploaded ${data.saved.length} image(s)`, 'success');
+    await loadGallery();
+  } catch (err) {
+    $('imgUploadStatus').textContent = 'Upload failed: ' + err.message;
+    toast('Upload failed: ' + err.message, 'error');
+  }
+}
+
+async function loadGallery() {
+  try {
+    const res = await apiFetch('/api/sources/images');
+    const data = await res.json();
+    const gallery = $('imgGallery');
+    gallery.innerHTML = '';
+    data.images.forEach(img => {
+      const el = document.createElement('div');
+      el.className = 'relative group rounded overflow-hidden border border-gray-800 bg-gray-900';
+      el.innerHTML = `
+        <img src="/api/sources/image/${encodeURIComponent(img.filename)}"
+          class="w-full h-16 object-cover" loading="lazy" title="${img.filename}" />
+        <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
+          <span class="text-xs text-white px-1 pb-0.5 truncate w-full">${img.filename}</span>
+        </div>
+        ${img.is_frame ? '<div class="absolute top-0 right-0 bg-amber-600 text-xs text-white px-1 leading-4">F</div>' : ''}
+      `;
+      gallery.appendChild(el);
+    });
+    $('imgCount').textContent = `${data.count} image(s) total`;
+  } catch (err) {
+    console.warn('Gallery load failed:', err);
+  }
+}
+
+async function uploadVideo() {
+  const fileInput = $('videoFileInput');
+  const intervalInput = $('frameInterval');
+  if (!fileInput.files.length) { toast('Select a video file first', 'warn'); return; }
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('frame_interval', intervalInput.value);
+  $('videoStatus').textContent = 'Uploading and extracting frames…';
+  try {
+    const res = await apiFetch('/api/sources/video', { method: 'POST', body: fd });
+    const data = await res.json();
+    $('videoStatus').textContent = `Extracted ${data.frames_extracted} frame(s) from "${data.video}"`;
+    toast(`Extracted ${data.frames_extracted} frames`, 'success');
+    await loadGallery();
+  } catch (err) {
+    $('videoStatus').textContent = 'Failed: ' + err.message;
+    toast('Video extraction failed: ' + err.message, 'error');
+  }
+}
+
+let webcamActive = false;
+function toggleWebcam() {
+  if (webcamActive) {
+    webcamActive = false;
+    $('webcamPreview').src = '';
+    $('webcamPreviewWrap').classList.add('hidden');
+    $('startWebcamBtn').textContent = 'Start Webcam';
+    $('webcamStatus').textContent = 'Webcam stopped.';
+  } else {
+    webcamActive = true;
+    $('webcamPreviewWrap').classList.remove('hidden');
+    $('webcamPreview').src = '/api/sources/webcam/stream';
+    $('startWebcamBtn').textContent = 'Stop Webcam';
+    $('webcamStatus').textContent = 'Webcam streaming…';
+    $('webcamPreview').onerror = () => {
+      $('webcamStatus').textContent = 'Webcam unavailable.';
+      webcamActive = false;
+      $('webcamPreviewWrap').classList.add('hidden');
+      $('startWebcamBtn').textContent = 'Start Webcam';
+    };
+  }
+}
+
+async function captureWebcam() {
+  try {
+    const res = await apiFetch('/api/sources/webcam/capture', { method: 'POST' });
+    const data = await res.json();
+    toast(`Captured: ${data.filename}`, 'success');
+    $('webcamStatus').textContent = `Captured: ${data.filename}`;
+    await loadGallery();
+  } catch (err) {
+    $('webcamStatus').textContent = 'Capture failed: ' + err.message;
+    toast('Capture failed: ' + err.message, 'error');
+  }
+}
+
+// =========================================================
+// ANNOTATE TAB
+// =========================================================
+async function refreshAnnotImages() {
+  try {
+    const res = await apiFetch('/api/sources/images');
+    const data = await res.json();
+    annotImages = data.images;
+    renderAnnotImageList();
+  } catch (err) {
+    console.warn('Failed to load images for annotation:', err);
+  }
+}
+
+function renderAnnotImageList() {
+  const list = $('annotImageList');
+  list.innerHTML = '';
+  if (!annotImages.length) {
+    list.innerHTML = '<div class="text-xs text-gray-600 p-2">No images yet.<br/>Upload some first.</div>';
+    return;
+  }
+  annotImages.forEach(img => {
+    const el = document.createElement('button');
+    el.className = `w-full text-left flex flex-col p-1.5 rounded text-xs hover:bg-gray-800 transition-colors ${img.filename === currentImage ? 'bg-gray-800 text-white' : 'text-gray-400'}`;
+    el.innerHTML = `
+      <img src="/api/sources/image/${encodeURIComponent(img.filename)}"
+        class="w-full h-14 object-cover rounded mb-0.5 border border-gray-700" loading="lazy" />
+      <span class="truncate w-full">${img.filename}</span>
+    `;
+    el.onclick = () => selectAnnotImage(img.filename);
+    list.appendChild(el);
+  });
+}
+
+async function selectAnnotImage(filename) {
+  currentImage = filename;
+  $('annotImageName').textContent = filename;
+  renderAnnotImageList();
+
+  // Load image onto canvas
+  const canvas = $('annotCanvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = async () => {
+    currentImageNaturalW = img.naturalWidth;
+    currentImageNaturalH = img.naturalHeight;
+    // Fit within reasonable display size
+    const maxW = 800, maxH = 560;
+    let dw = img.naturalWidth, dh = img.naturalHeight;
+    if (dw > maxW) { const r = maxW / dw; dw = maxW; dh = Math.round(dh * r); }
+    if (dh > maxH) { const r = maxH / dh; dh = maxH; dw = Math.round(dw * r); }
+    canvas.width = dw;
+    canvas.height = dh;
+    canvas._baseImg = img;
+    ctx.drawImage(img, 0, 0, dw, dh);
+    // Load annotations
+    await loadAnnotations(filename);
+    drawAllAnnotations();
+  };
+  img.src = `/api/sources/image/${encodeURIComponent(filename)}`;
+}
+
+async function loadAnnotations(filename) {
+  try {
+    const res = await apiFetch(`/api/labels/${encodeURIComponent(filename)}`);
+    const data = await res.json();
+    annotations = data.annotations || [];
+    selectedAnnotIdx = -1;
+    renderAnnotList();
+  } catch (err) {
+    annotations = [];
+    console.warn('Failed to load annotations:', err);
+  }
+}
+
+async function saveAnnotations() {
+  if (!currentImage) return;
+  try {
+    await apiFetch(`/api/labels/${encodeURIComponent(currentImage)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ annotations }),
+    });
+  } catch (err) {
+    console.warn('Failed to save annotations:', err);
+    toast('Auto-save failed: ' + err.message, 'error');
+  }
+}
+
+function drawAllAnnotations() {
+  const canvas = $('annotCanvas');
+  const ctx = canvas.getContext('2d');
+  // Clear and redraw base image
+  if (canvas._baseImg) {
+    ctx.drawImage(canvas._baseImg, 0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const cw = canvas.width, ch = canvas.height;
+
+  annotations.forEach((ann, idx) => {
+    const color = classColor(ann.class_id);
+    const isSelected = idx === selectedAnnotIdx;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isSelected ? 3 : 2;
+    ctx.fillStyle = color + '33';  // semi-transparent fill
+
+    if (ann.type === 'bbox' && ann.bbox) {
+      const { cx, cy, w, h } = ann.bbox;
+      const x = (cx - w / 2) * cw;
+      const y = (cy - h / 2) * ch;
+      const bw = w * cw;
+      const bh = h * ch;
+      ctx.fillRect(x, y, bw, bh);
+      ctx.strokeRect(x, y, bw, bh);
+      // Class label
+      const label = classes[ann.class_id] || `class_${ann.class_id}`;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y - 16, ctx.measureText(label).width + 6, 16);
+      ctx.fillStyle = '#fff';
+      ctx.font = '11px monospace';
+      ctx.fillText(label, x + 3, y - 3);
+    } else if (ann.type === 'polygon' && ann.polygon && ann.polygon.length >= 3) {
+      ctx.beginPath();
+      ann.polygon.forEach(([px, py], i) => {
+        const sx = px * cw, sy = py * ch;
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Label at centroid
+      const label = classes[ann.class_id] || `class_${ann.class_id}`;
+      const cx2 = ann.polygon.reduce((s, p) => s + p[0], 0) / ann.polygon.length * cw;
+      const cy2 = ann.polygon.reduce((s, p) => s + p[1], 0) / ann.polygon.length * ch;
+      ctx.fillStyle = color;
+      ctx.font = '11px monospace';
+      ctx.fillText(label, cx2, cy2);
+    }
+
+    // Selection handles
+    if (isSelected) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      if (ann.type === 'bbox' && ann.bbox) {
+        const { cx, cy, w, h } = ann.bbox;
+        ctx.strokeRect((cx - w/2)*cw - 1, (cy - h/2)*ch - 1, w*cw + 2, h*ch + 2);
+      }
+      ctx.setLineDash([]);
+    }
+  });
+
+  // Draw in-progress polygon
+  if (isDrawing && annotMode === 'polygon' && polyPoints.length > 0) {
+    const color = classColor(activeClassIdx);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    polyPoints.forEach(([px, py], i) => {
+      const sx = px * cw, sy = py * ch;
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    });
+    if (hoverPt) {
+      ctx.lineTo(hoverPt.x * cw, hoverPt.y * ch);
+    }
+    ctx.stroke();
+    // Draw vertex dots
+    polyPoints.forEach(([px, py]) => {
+      ctx.beginPath();
+      ctx.arc(px * cw, py * ch, 4, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    });
+  }
+
+  // In-progress bbox
+  if (isDrawing && annotMode === 'bbox' && drawStart && hoverPt) {
+    const color = classColor(activeClassIdx);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    const x = Math.min(drawStart.x, hoverPt.x) * cw;
+    const y = Math.min(drawStart.y, hoverPt.y) * ch;
+    const w = Math.abs(drawStart.x - hoverPt.x) * cw;
+    const h = Math.abs(drawStart.y - hoverPt.y) * ch;
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+  }
+}
+
+function canvasXY(e) {
+  const canvas = $('annotCanvas');
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / canvas.width,
+    y: (e.clientY - rect.top) / canvas.height,
+  };
+}
+
+function canvasMouseDown(e) {
+  if (!currentImage) return;
+  const pt = canvasXY(e);
+
+  if (annotMode === 'bbox') {
+    isDrawing = true;
+    drawStart = pt;
+    hoverPt = pt;
+  } else if (annotMode === 'polygon') {
+    if (!isDrawing) {
+      isDrawing = true;
+      polyPoints = [];
+    }
+    polyPoints.push([pt.x, pt.y]);
+    hoverPt = pt;
+    drawAllAnnotations();
+  }
+
+  // Hit-test for selection (only when not starting a new draw)
+  if (!isDrawing && annotMode !== 'polygon') {
+    hitTestAnnotation(pt);
+  }
+}
+
+function canvasMouseMove(e) {
+  if (!currentImage) return;
+  hoverPt = canvasXY(e);
+  if (isDrawing) drawAllAnnotations();
+}
+
+function canvasMouseUp(e) {
+  if (!currentImage) return;
+  if (annotMode === 'bbox' && isDrawing && drawStart) {
+    const pt = canvasXY(e);
+    const minX = Math.min(drawStart.x, pt.x);
+    const maxX = Math.max(drawStart.x, pt.x);
+    const minY = Math.min(drawStart.y, pt.y);
+    const maxY = Math.max(drawStart.y, pt.y);
+    const w = maxX - minX;
+    const h = maxY - minY;
+    if (w > 0.005 && h > 0.005) {
+      annotations.push({
+        class_id: activeClassIdx,
+        type: 'bbox',
+        bbox: { cx: minX + w/2, cy: minY + h/2, w, h },
+        polygon: null,
+      });
+      selectedAnnotIdx = annotations.length - 1;
+      saveAnnotations();
+      renderAnnotList();
+    }
+    isDrawing = false;
+    drawStart = null;
+    drawAllAnnotations();
+  }
+}
+
+function canvasDblClick(e) {
+  if (!currentImage) return;
+  if (annotMode === 'polygon' && polyPoints.length >= 3) {
+    annotations.push({
+      class_id: activeClassIdx,
+      type: 'polygon',
+      bbox: null,
+      polygon: polyPoints.map(([x,y]) => [x, y]),
+    });
+    selectedAnnotIdx = annotations.length - 1;
+    polyPoints = [];
+    isDrawing = false;
+    saveAnnotations();
+    renderAnnotList();
+    drawAllAnnotations();
+  }
+}
+
+function hitTestAnnotation(pt) {
+  const canvas = $('annotCanvas');
+  const cw = canvas.width, ch = canvas.height;
+  let found = -1;
+  for (let i = annotations.length - 1; i >= 0; i--) {
+    const ann = annotations[i];
+    if (ann.type === 'bbox' && ann.bbox) {
+      const { cx, cy, w, h } = ann.bbox;
+      if (pt.x >= cx - w/2 && pt.x <= cx + w/2 && pt.y >= cy - h/2 && pt.y <= cy + h/2) {
+        found = i; break;
+      }
+    } else if (ann.type === 'polygon' && ann.polygon) {
+      if (pointInPolygon(pt.x, pt.y, ann.polygon)) { found = i; break; }
+    }
+  }
+  selectedAnnotIdx = found;
+  renderAnnotList();
+  drawAllAnnotations();
+}
+
+function pointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function deleteSelectedAnnot() {
+  if (selectedAnnotIdx < 0) { toast('No annotation selected', 'warn'); return; }
+  annotations.splice(selectedAnnotIdx, 1);
+  selectedAnnotIdx = -1;
+  saveAnnotations();
+  renderAnnotList();
+  drawAllAnnotations();
+}
+
+function clearAnnotations() {
+  if (!currentImage) return;
+  if (!confirm('Clear all annotations for this image?')) return;
+  annotations = [];
+  selectedAnnotIdx = -1;
+  saveAnnotations();
+  renderAnnotList();
+  drawAllAnnotations();
+}
+
+function setAnnotMode(mode) {
+  annotMode = mode;
+  isDrawing = false;
+  polyPoints = [];
+  drawStart = null;
+  $('btnBbox').className = 'px-3 py-1 text-xs rounded transition-colors ' +
+    (mode === 'bbox' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300');
+  $('btnPoly').className = 'px-3 py-1 text-xs rounded transition-colors ' +
+    (mode === 'polygon' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300');
+  drawAllAnnotations();
+}
+
+function renderAnnotList() {
+  const list = $('annotList');
+  list.innerHTML = '';
+  if (!annotations.length) {
+    list.innerHTML = '<div class="text-xs text-gray-600">No annotations yet.</div>';
+    return;
+  }
+  annotations.forEach((ann, idx) => {
+    const el = document.createElement('div');
+    const isSelected = idx === selectedAnnotIdx;
+    el.className = `flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${isSelected ? 'bg-gray-700' : 'hover:bg-gray-800'}`;
+    const color = classColor(ann.class_id);
+    const label = classes[ann.class_id] || `class_${ann.class_id}`;
+    el.innerHTML = `
+      <span class="class-color" style="background:${color}"></span>
+      <span class="flex-1 truncate text-gray-300">[${idx}] ${label} <span class="text-gray-600">${ann.type}</span></span>
+      <button class="text-red-500 hover:text-red-300 ml-1" onclick="removeAnnot(${idx});event.stopPropagation()">✕</button>
+    `;
+    el.onclick = () => { selectedAnnotIdx = idx; renderAnnotList(); drawAllAnnotations(); };
+    list.appendChild(el);
+  });
+}
+
+function removeAnnot(idx) {
+  annotations.splice(idx, 1);
+  if (selectedAnnotIdx >= annotations.length) selectedAnnotIdx = -1;
+  saveAnnotations();
+  renderAnnotList();
+  drawAllAnnotations();
+}
+
+// =========================================================
+// CLASS MANAGEMENT
+// =========================================================
+async function loadClasses() {
+  try {
+    const res = await apiFetch('/api/labels/classes');
+    const data = await res.json();
+    classes = data.classes || [];
+    renderClassList();
+  } catch (err) {
+    console.warn('Failed to load classes:', err);
+  }
+}
+
+async function saveClasses() {
+  try {
+    await apiFetch('/api/labels/classes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classes }),
+    });
+  } catch (err) {
+    toast('Failed to save classes: ' + err.message, 'error');
+  }
+}
+
+function renderClassList() {
+  const list = $('classList');
+  list.innerHTML = '';
+  if (!classes.length) {
+    list.innerHTML = '<div class="text-xs text-gray-600">No classes yet.</div>';
+    $('activeClassBadge').textContent = 'none';
+    return;
+  }
+  classes.forEach((cls, idx) => {
+    const el = document.createElement('div');
+    const isActive = idx === activeClassIdx;
+    el.className = `flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${isActive ? 'bg-gray-700' : 'hover:bg-gray-800'}`;
+    el.innerHTML = `
+      <span class="class-color" style="background:${classColor(idx)}"></span>
+      <span class="flex-1 truncate text-gray-300">${idx}: ${cls}</span>
+      <button class="text-red-500 hover:text-red-300" onclick="removeClass(${idx});event.stopPropagation()">✕</button>
+    `;
+    el.onclick = () => { activeClassIdx = idx; renderClassList(); updateActiveBadge(); };
+    list.appendChild(el);
+  });
+  updateActiveBadge();
+}
+
+function updateActiveBadge() {
+  const badge = $('activeClassBadge');
+  if (activeClassIdx < classes.length) {
+    badge.textContent = `[${activeClassIdx}] ${classes[activeClassIdx]}`;
+    badge.style.borderLeft = `3px solid ${classColor(activeClassIdx)}`;
+  } else {
+    badge.textContent = 'none selected';
+    badge.style.borderLeft = '';
+  }
+}
+
+async function addClass() {
+  const input = $('newClassName');
+  const name = input.value.trim();
+  if (!name) return;
+  if (classes.includes(name)) { toast('Class already exists', 'warn'); return; }
+  classes.push(name);
+  activeClassIdx = classes.length - 1;
+  input.value = '';
+  await saveClasses();
+  renderClassList();
+}
+
+async function removeClass(idx) {
+  classes.splice(idx, 1);
+  if (activeClassIdx >= classes.length) activeClassIdx = Math.max(0, classes.length - 1);
+  await saveClasses();
+  renderClassList();
+}
+
+// =========================================================
+// TRAINING TAB
+// =========================================================
+function getTrainingConfig() {
+  const task = document.querySelector('input[name="task"]:checked')?.value || 'detect';
+  return {
+    task,
+    model_size: $('modelSize').value,
+    epochs: parseInt($('trainEpochs').value) || 50,
+    imgsz: parseInt($('trainImgsz').value) || 640,
+    batch: parseInt($('trainBatch').value) || 16,
+    lr0: parseFloat($('trainLr').value) || 0.01,
+    project_name: $('trainProjectName').value.trim() || 'yololizer_run',
+  };
+}
+
+function appendLog(text) {
+  const term = $('logTerminal');
+  const line = document.createElement('div');
+  line.textContent = text;
+  // Color-code certain lines
+  if (text.includes('ERROR') || text.includes('error')) line.style.color = '#f87171';
+  else if (text.includes('YOLOlizer')) line.style.color = '#a5b4fc';
+  else if (text.includes('mAP') || text.includes('loss')) line.style.color = '#6ee7b7';
+  term.appendChild(line);
+  term.scrollTop = term.scrollHeight;
+  // Try to parse metrics from log line
+  parseMetricsFromLog(text);
+}
+
+function clearLog() {
+  $('logTerminal').innerHTML = '';
+}
+
+// Very basic metric extraction from Ultralytics log lines
+// Example: "     1/50      1.23      1.45      0.89      100     640"
+function parseMetricsFromLog(line) {
+  // Ultralytics epoch output format: epoch/total box_loss cls_loss dfl_loss instances imgSz
+  const epochMatch = line.match(/^\s*(\d+)\/(\d+)\s+([\d.]+)\s+([\d.]+)/);
+  if (epochMatch) {
+    $('trainEpochDisplay').textContent = `${epochMatch[1]}/${epochMatch[2]}`;
+    $('metricBoxLoss').textContent = parseFloat(epochMatch[3]).toFixed(4);
+    $('metricClsLoss').textContent = parseFloat(epochMatch[4]).toFixed(4);
+  }
+  // mAP50 from validation output
+  const mapMatch = line.match(/mAP50[^0-9]*([\d.]+)/i);
+  if (mapMatch) {
+    $('metricMap50').textContent = parseFloat(mapMatch[1]).toFixed(4);
+  }
+}
+
+async function startTraining() {
+  const cfg = getTrainingConfig();
+  clearLog();
+  appendLog('[YOLOlizer] Submitting training request…');
+  try {
+    await apiFetch('/api/training/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    });
+    toast('Training started!', 'success');
+    startSSE();
+    startStatusPoll();
+  } catch (err) {
+    appendLog('[ERROR] ' + err.message);
+    toast('Failed to start training: ' + err.message, 'error');
+  }
+}
+
+async function stopTraining() {
+  try {
+    await apiFetch('/api/training/stop', { method: 'POST' });
+    toast('Stop requested', 'warn');
+  } catch (err) {
+    toast('Stop failed: ' + err.message, 'error');
+  }
+}
+
+function startSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+  sseSource = new EventSource(API + '/api/training/logs');
+  sseSource.onmessage = (e) => { appendLog(e.data); };
+  sseSource.onerror = () => {
+    // SSE errors are common when training ends; don't spam
+  };
+}
+
+function startStatusPoll() {
+  if (statusPollInterval) clearInterval(statusPollInterval);
+  statusPollInterval = setInterval(async () => {
+    try {
+      const res = await apiFetch('/api/training/status');
+      const data = await res.json();
+      const badge = $('trainStatusBadge');
+      badge.textContent = data.status;
+      const colors = { idle:'text-gray-400', preparing:'text-amber-400', training:'text-emerald-400', done:'text-indigo-400', error:'text-red-400', stopped:'text-orange-400' };
+      badge.className = `text-sm font-semibold ${colors[data.status] || 'text-gray-300'}`;
+      $('metricElapsed').textContent = formatElapsed(data.elapsed_seconds);
+
+      if (['done','error','stopped'].includes(data.status)) {
+        clearInterval(statusPollInterval);
+        statusPollInterval = null;
+        if (sseSource) { setTimeout(() => { if (sseSource) { sseSource.close(); sseSource = null; } }, 2000); }
+      }
+    } catch (e) { /* ignore transient errors */ }
+  }, 2000);
+}
+
+// Wire up task radio buttons styling
+document.querySelectorAll('input[name="task"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('.task-btn > div').forEach(div => {
+      div.className = 'flex flex-col items-center gap-1 p-2 rounded-lg border border-gray-700 hover:border-indigo-600 text-center transition-colors';
+      div.querySelector('span.text-xs').className = 'text-xs font-medium text-gray-400';
+    });
+    const activeDiv = radio.closest('.task-btn').querySelector('div');
+    activeDiv.className = 'flex flex-col items-center gap-1 p-2 rounded-lg border border-indigo-500 bg-indigo-900/30 text-center transition-colors';
+    activeDiv.querySelector('span.text-xs').className = 'text-xs font-medium text-indigo-300';
+  });
+});
+
+// =========================================================
+// MODELS TAB
+// =========================================================
+async function loadModels() {
+  $('modelsList').innerHTML = '<div class="text-sm text-gray-500">Loading…</div>';
+  try {
+    const res = await apiFetch('/api/models');
+    const data = await res.json();
+    renderModelsList(data.models);
+  } catch (err) {
+    $('modelsList').innerHTML = `<div class="text-sm text-red-400">Failed to load models: ${err.message}</div>`;
+  }
+}
+
+function renderModelsList(models) {
+  const container = $('modelsList');
+  if (!models.length) {
+    container.innerHTML = '<div class="text-sm text-gray-500 bg-gray-900 rounded-xl border border-gray-800 p-6 text-center">No trained models yet. Train a model first.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  models.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4';
+    const date = m.mtime ? new Date(m.mtime * 1000).toLocaleString() : '—';
+    const map50 = m.map50 != null ? m.map50.toFixed(4) : '—';
+    el.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-white truncate">${m.name}</div>
+        <div class="text-xs text-gray-500 mt-0.5">${date}</div>
+        <div class="mt-1 flex gap-3 text-xs">
+          <span class="text-indigo-400">mAP50: ${map50}</span>
+          ${m.has_best_pt ? '<span class="text-emerald-400">best.pt available</span>' : '<span class="text-gray-600">no best.pt</span>'}
+        </div>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        ${m.has_best_pt ? `<a href="/api/models/download/${encodeURIComponent(m.name)}"
+          class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          Download best.pt
+        </a>` : ''}
+        <button onclick="showMetricsChart('${m.name}')"
+          class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded-lg transition-colors">
+          Metrics
+        </button>
+      </div>
+    `;
+    container.appendChild(el);
+  });
+}
+
+async function showMetricsChart(runName) {
+  try {
+    const res = await apiFetch(`/api/models/${encodeURIComponent(runName)}/metrics`);
+    const data = await res.json();
+    const rows = data.metrics;
+    if (!rows || !rows.length) { toast('No metrics data available', 'warn'); return; }
+
+    // Find mAP50 column
+    const keys = Object.keys(rows[0]);
+    const map50Key = keys.find(k => k.toLowerCase().includes('map50') && !k.includes('95'));
+    const boxLossKey = keys.find(k => k.toLowerCase().includes('box_loss') || k.toLowerCase().includes('train/box'));
+    const epochs = rows.map((_, i) => i + 1);
+
+    const datasets = [];
+    if (map50Key) {
+      datasets.push({
+        label: 'mAP50',
+        data: rows.map(r => parseFloat(r[map50Key]) || 0),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.1)',
+        tension: 0.3,
+        yAxisID: 'y',
+      });
+    }
+    if (boxLossKey) {
+      datasets.push({
+        label: 'Box Loss',
+        data: rows.map(r => parseFloat(r[boxLossKey]) || 0),
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16,185,129,0.1)',
+        tension: 0.3,
+        yAxisID: 'y1',
+      });
+    }
+
+    const section = $('metricsChartSection');
+    section.classList.remove('hidden');
+    $('chartTitle').textContent = `Metrics: ${runName}`;
+
+    if (metricsChart) { metricsChart.destroy(); metricsChart = null; }
+
+    const ctx2 = $('metricsChart').getContext('2d');
+    metricsChart = new Chart(ctx2, {
+      type: 'line',
+      data: { labels: epochs, datasets },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: '#9ca3af' } } },
+        scales: {
+          x: { grid: { color: '#1f2937' }, ticks: { color: '#6b7280' } },
+          y: { grid: { color: '#1f2937' }, ticks: { color: '#6b7280' }, position: 'left' },
+          y1: { grid: { drawOnChartArea: false }, ticks: { color: '#6b7280' }, position: 'right' },
+        },
+      },
+    });
+
+    section.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    toast('Failed to load metrics: ' + err.message, 'error');
+  }
+}
+
+// =========================================================
+// INIT
+// =========================================================
+(function init() {
+  checkHealth();
+  setInterval(checkHealth, 30000);
+  loadGallery();
+  // Restore SSE if training was already in progress
+  (async () => {
+    try {
+      const res = await apiFetch('/api/training/status');
+      const data = await res.json();
+      if (['preparing','training'].includes(data.status)) {
+        startSSE();
+        startStatusPoll();
+        $('trainStatusBadge').textContent = data.status;
+      }
+    } catch (e) { /* ignore */ }
+  })();
+})();
+</script>
+</body>
+</html>
