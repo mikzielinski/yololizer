@@ -1,0 +1,32 @@
+{
+  "name": "YOLOlizer",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "YOLOlizer",
+      "onAutoForward": "openBrowser"
+    }
+  },
+
+  "postCreateCommand": "pip install --quiet -r requirements.txt",
+  "postStartCommand": "nohup python run.py > /tmp/yololizer.log 2>&1 &",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "remoteEnv": {
+    "PYTHONUNBUFFERED": "1"
+  }
+}

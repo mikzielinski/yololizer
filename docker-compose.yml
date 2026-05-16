@@ -1,0 +1,21 @@
+services:
+  yololizer:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist training data, labels, uploads, and model runs on the host
+      - ./data:/app/data
+      - ./runs:/app/runs
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Pass through GPU if available (requires nvidia-container-toolkit)
+    # Uncomment the lines below to enable GPU acceleration:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
