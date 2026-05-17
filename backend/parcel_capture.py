@@ -16,6 +16,32 @@ from backend.infer_tracking import ObjectSpeedTracker, detections_from_result
 logger = logging.getLogger(__name__)
 
 
+def encode_video_frame_jpeg(
+    video_path: Path,
+    frame_index: int,
+    bbox: Optional[List[float]] = None,
+    quality: int = 90,
+) -> bytes:
+    """Read one frame from video; optionally draw bbox; return JPEG bytes."""
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise ValueError(f"Could not open video: {video_path}")
+    try:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            raise ValueError(f"Frame {frame_index} not found")
+        if bbox and len(bbox) >= 4:
+            x1, y1, x2, y2 = bbox[:4]
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 220, 80), 2)
+        ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not ok:
+            raise ValueError("JPEG encode failed")
+        return jpg.tobytes()
+    finally:
+        cap.release()
+
+
 def travel_real_seconds(distance_m: float, speed_m_per_s: float) -> float:
     if speed_m_per_s <= 0:
         raise ValueError("conveyor_speed_m_per_s must be > 0")

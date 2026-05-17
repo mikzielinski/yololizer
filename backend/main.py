@@ -3,9 +3,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.openapi_config import OPENAPI_DESCRIPTION, OPENAPI_TAGS, apply_openapi
 from backend.routers import inference, labels, models, parcel, sources, training
 
 logging.basicConfig(
@@ -15,10 +17,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="YOLOlizer",
-    description="Local web service for training YOLO models",
+    title="YOLOlizer API",
+    description=OPENAPI_DESCRIPTION,
     version="1.0.0",
+    openapi_tags=OPENAPI_TAGS,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    contact={"name": "YOLOlizer", "url": "https://github.com/mikzielinski/yololizer"},
+    license_info={"name": "MIT"},
 )
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+    )
+    apply_openapi(schema)
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +85,7 @@ async def serve_frontend_config():
     return FileResponse(str(path), media_type="application/javascript")
 
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health():
+    """Check that the API process is running."""
     return {"status": "ok", "service": "YOLOlizer"}

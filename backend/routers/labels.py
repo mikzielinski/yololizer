@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api/labels", tags=["labels"])
 
 
 class BBox(BaseModel):
-    """Normalized bounding box in YOLO format: cx, cy, w, h all in [0,1]."""
+    """YOLO bbox: center x,y and width,height, all normalized 0–1."""
+
     cx: float
     cy: float
     w: float
@@ -23,13 +24,29 @@ class BBox(BaseModel):
 
 class Annotation(BaseModel):
     class_id: int
-    type: str = "bbox"  # "bbox" or "polygon"
+    type: str = "bbox"
     bbox: Optional[BBox] = None
-    polygon: Optional[List[List[float]]] = None  # list of [x, y] normalized points
+    polygon: Optional[List[List[float]]] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "class_id": 0,
+                    "type": "bbox",
+                    "bbox": {"cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.3},
+                }
+            ]
+        }
+    }
 
 
 class AnnotationSet(BaseModel):
     annotations: List[Annotation]
+
+
+class ClassesBody(BaseModel):
+    classes: List[str]
 
 
 def _label_path(image_name: str) -> Path:
@@ -100,11 +117,9 @@ async def get_classes():
 
 
 @router.post("/classes")
-async def save_classes(body: dict):
+async def save_classes(body: ClassesBody):
     """Save the list of class names."""
-    classes = body.get("classes", [])
-    if not isinstance(classes, list):
-        raise HTTPException(status_code=400, detail="classes must be a list")
+    classes = body.classes
     content = "\n".join(str(c) for c in classes)
     async with aiofiles.open(CLASSES_FILE, "w") as f:
         await f.write(content)

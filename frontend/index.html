@@ -42,7 +42,8 @@
     @keyframes blink { 50% { opacity: 0; } }
     .cursor-blink { animation: blink 1s step-end infinite; }
 
-    #videoDetectionsModal:not(.hidden) { display: flex; }
+    #videoDetectionsModal:not(.hidden),
+    #parcelClusterModal:not(.hidden) { display: flex; }
 
     .infer-video-wrap { position: relative; display: block; }
     #inferVideoFrameBadge {
@@ -259,6 +260,23 @@
           </div>
         </div>
         <div id="videoStatus" class="mt-3 text-sm text-gray-400"></div>
+        <div id="videoLibrarySection" class="mt-5 pt-5 border-t border-gray-800">
+          <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <div>
+              <h4 class="text-sm font-medium text-gray-300">Video library</h4>
+              <p class="text-xs text-gray-600 mt-0.5">Saved recordings (YouTube downloads) — use in Infer / Parcel</p>
+            </div>
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input id="videoLibraryDeleteFrames" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-indigo-600" />
+              Also delete extracted frames
+            </label>
+            <button type="button" onclick="loadVideoLibrary()"
+              class="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700">Refresh</button>
+          </div>
+          <div id="videoLibraryList" class="space-y-2 max-h-72 overflow-y-auto">
+            <p class="text-xs text-gray-600 py-2">Loading…</p>
+          </div>
+        </div>
       </div>
 
       <!-- Webcam -->
@@ -838,6 +856,28 @@
             <video id="parcelClipVideo" controls class="w-full rounded-lg border border-gray-700 max-h-64 bg-black"></video>
             <a id="parcelClipDownload" href="#" download class="inline-block mt-2 text-xs text-indigo-400">Download clip</a>
           </div>
+          <div id="parcelClustersToolbar" class="hidden flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h4 class="text-sm font-medium text-gray-300">Top clusters <span class="text-gray-500 font-normal">(click to enlarge)</span></h4>
+              <a id="parcelZipDownload" href="#" class="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-indigo-300 border border-gray-700 shrink-0">Download all frames (ZIP)</a>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <label for="parcelClusterSort" class="text-xs text-gray-500">Sort by</label>
+              <select id="parcelClusterSort" onchange="renderParcelClustersList()"
+                class="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
+                <option value="score_desc">Score (high → low)</option>
+                <option value="score_asc">Score (low → high)</option>
+                <option value="time_asc">Time on film (earliest)</option>
+                <option value="time_desc">Time on film (latest)</option>
+                <option value="conf_desc">Confidence (high → low)</option>
+                <option value="conf_asc">Confidence (low → high)</option>
+                <option value="detections_desc">Detections (most)</option>
+                <option value="detections_asc">Detections (fewest)</option>
+                <option value="frame_span_desc">Track span (longest)</option>
+                <option value="rank">Original rank</option>
+              </select>
+            </div>
+          </div>
           <div id="parcelClustersList" class="space-y-3"></div>
         </div>
       </div>
@@ -892,6 +932,35 @@
             Download result video
           </a>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Parcel cluster frame modal -->
+<div id="parcelClusterModal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/70 p-4"
+  onclick="if(event.target===this)closeParcelClusterModal()">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl"
+    onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800 shrink-0 gap-3">
+      <div class="min-w-0">
+        <h3 id="parcelClusterModalTitle" class="text-lg font-semibold text-gray-100 truncate">Cluster</h3>
+        <p id="parcelClusterModalSubtitle" class="text-xs text-gray-500 mt-0.5"></p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" onclick="navParcelCluster(-1)" class="px-2 py-1 text-sm rounded bg-gray-800 hover:bg-gray-700 text-gray-300" title="Previous">‹</button>
+        <button type="button" onclick="navParcelCluster(1)" class="px-2 py-1 text-sm rounded bg-gray-800 hover:bg-gray-700 text-gray-300" title="Next">›</button>
+        <button type="button" onclick="closeParcelClusterModal()" class="text-gray-400 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+    </div>
+    <div class="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
+      <div class="flex-1 p-5 flex items-center justify-center bg-black/40 min-h-[200px]">
+        <img id="parcelClusterModalImg" src="" alt="Cluster frame" class="max-w-full max-h-[55vh] rounded-lg border border-gray-700 object-contain" />
+      </div>
+      <div class="w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-gray-800 p-5 overflow-y-auto space-y-3">
+        <dl id="parcelClusterModalDetails" class="text-xs space-y-2 text-gray-400"></dl>
+        <a id="parcelClusterModalDownload" href="#" download
+          class="block w-full py-2 text-xs text-center rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white">Download this frame</a>
       </div>
     </div>
   </div>
@@ -1047,6 +1116,7 @@ function showTab(name) {
     loadModels();
   } else if (name === 'sources') {
     loadGallery();
+    loadVideoLibrary();
   } else if (name === 'infer') {
     loadInferModels();
     loadInferResults();
@@ -1118,6 +1188,96 @@ async function loadGallery() {
   }
 }
 
+
+function formatVideoLibraryDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleString();
+}
+
+async function loadVideoLibrary() {
+  const list = $('videoLibraryList');
+  if (!list) return;
+  try {
+    const res = await apiFetch('/api/sources/videos');
+    const data = await res.json();
+    const videos = data.videos || [];
+    if (!videos.length) {
+      list.innerHTML = '<p class="text-xs text-gray-600 py-2">No saved recordings yet. Download a YouTube video above.</p>';
+      return;
+    }
+    list.innerHTML = '';
+    videos.forEach(v => {
+      const row = document.createElement('div');
+      row.className = 'flex flex-col gap-2 bg-gray-950 border border-gray-800 rounded-lg p-3';
+      row.dataset.filename = v.filename;
+      const playUrl = getApiBase() + v.play_url;
+      const dateStr = formatVideoLibraryDate(v.modified_at);
+      row.innerHTML = `
+        <div class="flex items-start gap-2">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm text-gray-200 truncate" title="${escapeHtml(v.filename)}">${escapeHtml(v.filename)}</p>
+            <p class="text-xs text-gray-500">${v.size_mb ?? '?'} MB · ${dateStr}</p>
+          </div>
+          <button type="button" data-action="play" class="text-xs text-indigo-400 hover:text-indigo-300 shrink-0">Play</button>
+          <button type="button" data-action="delete" class="text-xs text-red-400 hover:text-red-300 shrink-0">Delete</button>
+        </div>
+        <video class="hidden w-full rounded border border-gray-700 max-h-40 bg-black" controls preload="metadata"></video>
+      `;
+      row.querySelector('[data-action="play"]').addEventListener('click', () => {
+        const vid = row.querySelector('video');
+        if (vid.classList.contains('hidden')) {
+          vid.src = playUrl + '?t=' + Date.now();
+          vid.classList.remove('hidden');
+        } else {
+          vid.classList.add('hidden');
+          vid.pause();
+          vid.removeAttribute('src');
+        }
+      });
+      row.querySelector('[data-action="delete"]').addEventListener('click', () => deleteLibraryVideo(v.filename, row));
+      list.appendChild(row);
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="text-xs text-red-400 py-2">Failed to load: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function deleteLibraryVideo(filename, rowEl) {
+  const alsoFrames = $('videoLibraryDeleteFrames')?.checked;
+  const msg = alsoFrames
+    ? `Delete "${filename}" and its extracted annotation frames?`
+    : `Delete recording "${filename}"?`;
+  if (!confirm(msg)) return;
+  try {
+    const q = alsoFrames ? '?delete_frames=true' : '';
+    const res = await apiFetch(`/api/sources/videos/${encodeURIComponent(filename)}${q}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Delete failed');
+    }
+    const data = await res.json();
+    rowEl?.remove();
+    const list = $('videoLibraryList');
+    if (list && !list.children.length) {
+      list.innerHTML = '<p class="text-xs text-gray-600 py-2">No saved recordings.</p>';
+    }
+    if (window.lastYoutubeVideo?.filename === filename) {
+      $('youtubePlayerWrap')?.classList.add('hidden');
+      $('youtubePlayer')?.removeAttribute('src');
+      window.lastYoutubeVideo = null;
+    }
+    if (parcelServerVideo?.filename === filename) {
+      parcelServerVideo = null;
+      $('parcelVideoSelect').value = '';
+      $('parcelSourceVideo')?.classList.add('hidden');
+    }
+    loadParcelVideos();
+    toast(data.frames_deleted ? `Deleted video + ${data.frames_deleted} frame(s)` : 'Recording deleted', 'success');
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+}
+
 function setVideoSource(mode) {
   const isYoutube = mode === 'youtube';
   $('videoSourceFile').classList.toggle('hidden', isYoutube);
@@ -1170,6 +1330,7 @@ async function downloadYoutubeWatch() {
     showYoutubePlayer(data);
     $('videoStatus').textContent = `Ready: "${data.video}" — watch below or process in Infer tab`;
     toast('Video downloaded', 'success');
+    loadVideoLibrary();
   } catch (err) {
     setProgressUi('videoProgress', 'videoProgressBar', 'videoProgressText', 'videoProgressPct', false, 0, '');
     $('videoStatus').textContent = isCancelledError(err.message) ? 'Cancelled.' : 'Failed: ' + err.message;
@@ -1188,6 +1349,7 @@ async function downloadYoutubeExtract() {
     showYoutubePlayer(data);
     $('videoStatus').textContent = `Extracted ${data.frames_extracted} frame(s) from "${data.video}"`;
     toast(`Extracted ${data.frames_extracted} frames`, 'success');
+    loadVideoLibrary();
     await loadGallery();
   } catch (err) {
     setProgressUi('videoProgress', 'videoProgressBar', 'videoProgressText', 'videoProgressPct', false, 0, '');
@@ -2243,9 +2405,9 @@ function closeVideoDetectionsModal() {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('videoDetectionsModal').classList.contains('hidden')) {
-    closeVideoDetectionsModal();
-  }
+  if (e.key !== 'Escape') return;
+  if (!$('parcelClusterModal').classList.contains('hidden')) closeParcelClusterModal();
+  else if (!$('videoDetectionsModal').classList.contains('hidden')) closeVideoDetectionsModal();
 });
 
 let inferSourceFile = null;
@@ -2643,6 +2805,9 @@ async function deleteInferResult(filename, el) {
 // =========================================================
 let parcelSourceFile = null;
 let parcelServerVideo = null;
+let lastParcelResult = null;
+let parcelDisplayClusters = [];
+let parcelClusterModalIndex = 0;
 
 function parcelFormParams() {
   return {
@@ -2748,15 +2913,170 @@ async function previewParcelTiming() {
   }
 }
 
-function parcelFrameUrl(captureId, frameIndex, bbox) {
+function parcelFrameUrl(captureId, frameIndex, bbox, download = false) {
   const base = getApiBase() + `/api/parcel/frame/${encodeURIComponent(captureId)}/${frameIndex}`;
-  if (!bbox || bbox.length < 4) return base;
-  const [x1, y1, x2, y2] = bbox;
-  return `${base}?x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}`;
+  const params = new URLSearchParams();
+  if (bbox && bbox.length >= 4) {
+    params.set('x1', bbox[0]);
+    params.set('y1', bbox[1]);
+    params.set('x2', bbox[2]);
+    params.set('y2', bbox[3]);
+  }
+  if (download) params.set('download', 'true');
+  const q = params.toString();
+  return q ? `${base}?${q}` : base;
+}
+
+function parcelZipUrl(captureId, sort) {
+  const s = sort || $('parcelClusterSort')?.value || 'score_desc';
+  return getApiBase() + `/api/parcel/frames-zip/${encodeURIComponent(captureId)}?sort=${encodeURIComponent(s)}`;
+}
+
+function parcelFilmSec(frameIndex, fps) {
+  if (!fps || fps <= 0) return '—';
+  return (frameIndex / fps).toFixed(3) + ' s';
+}
+
+function parcelClusterDownloadName(result, cluster) {
+  const cls = (cluster.class_name || 'obj').replace(/[^\w\-]+/g, '_').slice(0, 40);
+  return `parcel_${result.capture_id}_rank${cluster.rank}_${cls}_frame${cluster.best_frame}.jpg`;
+}
+
+function parcelClusterDetailRows(result, c) {
+  const fps = result.fps || 0;
+  const bb = c.best_bbox || [];
+  return [
+    ['Rank', `#${c.rank}`],
+    ['Class', c.class_name],
+    ['Track ID', String(c.track_id)],
+    ['Score', String(c.score)],
+    ['Detections', String(c.detection_count)],
+    ['Mean confidence', `${(c.mean_confidence * 100).toFixed(1)}%`],
+    ['Frame range', `${c.frame_start} – ${c.frame_end}`],
+    ['Best frame', String(c.best_frame)],
+    ['Time on film', parcelFilmSec(c.best_frame, fps)],
+    ['BBox', bb.length >= 4 ? bb.map(v => Math.round(v)).join(', ') : '—'],
+    ['Capture ID', result.capture_id],
+  ];
+}
+
+function parcelClusterSortKey(c, sortId, fps) {
+  const span = (c.frame_end ?? c.best_frame) - (c.frame_start ?? c.best_frame);
+  switch (sortId) {
+    case 'time_asc': return c.best_frame ?? 0;
+    case 'time_desc': return -(c.best_frame ?? 0);
+    case 'conf_desc': return -(c.mean_confidence ?? 0);
+    case 'conf_asc': return c.mean_confidence ?? 0;
+    case 'score_asc': return c.score ?? 0;
+    case 'detections_desc': return -(c.detection_count ?? 0);
+    case 'detections_asc': return c.detection_count ?? 0;
+    case 'frame_span_desc': return -span;
+    case 'rank': return c.rank ?? 999;
+    case 'score_desc':
+    default: return -(c.score ?? 0);
+  }
+}
+
+function getSortedParcelClusters() {
+  if (!lastParcelResult?.clusters?.length) return [];
+  const sortId = $('parcelClusterSort')?.value || 'score_desc';
+  return [...lastParcelResult.clusters].sort(
+    (a, b) => parcelClusterSortKey(a, sortId) - parcelClusterSortKey(b, sortId)
+  );
+}
+
+function fillParcelClusterModal(index) {
+  if (!lastParcelResult) return;
+  if (!parcelDisplayClusters.length) parcelDisplayClusters = getSortedParcelClusters();
+  if (!parcelDisplayClusters.length) return;
+  parcelClusterModalIndex = ((index % parcelDisplayClusters.length) + parcelDisplayClusters.length) % parcelDisplayClusters.length;
+  const c = parcelDisplayClusters[parcelClusterModalIndex];
+  const result = lastParcelResult;
+
+  $('parcelClusterModalTitle').textContent = `#${c.rank} ${c.class_name}`;
+  $('parcelClusterModalSubtitle').textContent =
+    `Track ${c.track_id} · frame ${c.best_frame} · ${parcelFilmSec(c.best_frame, result.fps)} on film`;
+
+  const previewUrl = parcelFrameUrl(result.capture_id, c.best_frame, c.best_bbox);
+  $('parcelClusterModalImg').src = previewUrl + (previewUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+
+  const dl = $('parcelClusterModalDownload');
+  dl.href = parcelFrameUrl(result.capture_id, c.best_frame, c.best_bbox, true);
+  dl.download = parcelClusterDownloadName(result, c);
+
+  $('parcelClusterModalDetails').innerHTML = parcelClusterDetailRows(result, c).map(([k, v]) =>
+    `<div class="flex gap-2"><dt class="text-gray-500 w-28 shrink-0">${escapeHtml(k)}</dt><dd class="text-gray-200 font-mono break-all">${escapeHtml(v)}</dd></div>`
+  ).join('');
+}
+
+function openParcelClusterModal(index) {
+  if (!getSortedParcelClusters().length) return;
+  parcelDisplayClusters = getSortedParcelClusters();
+  fillParcelClusterModal(index);
+  $('parcelClusterModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeParcelClusterModal() {
+  $('parcelClusterModal').classList.add('hidden');
+  document.body.style.overflow = '';
+  $('parcelClusterModalImg').removeAttribute('src');
+}
+
+function navParcelCluster(delta) {
+  if (!parcelDisplayClusters.length) return;
+  fillParcelClusterModal(parcelClusterModalIndex + delta);
+}
+
+function renderParcelClustersList() {
+  if (!lastParcelResult) return;
+  const result = lastParcelResult;
+  const list = $('parcelClustersList');
+  const toolbar = $('parcelClustersToolbar');
+  list.innerHTML = '';
+  parcelDisplayClusters = getSortedParcelClusters();
+  if (!parcelDisplayClusters.length) {
+    toolbar.classList.add('hidden');
+    list.innerHTML = '<p class="text-xs text-gray-600">No clusters in window.</p>';
+    return;
+  }
+
+  toolbar.classList.remove('hidden');
+  const zip = $('parcelZipDownload');
+  zip.href = parcelZipUrl(result.capture_id);
+  zip.download = `parcel_${result.capture_id}_top_frames.zip`;
+
+  parcelDisplayClusters.forEach((c, idx) => {
+    const card = document.createElement('div');
+    card.className = 'flex gap-3 bg-gray-950 border border-gray-800 rounded-lg p-3 cursor-pointer hover:border-indigo-600/50 hover:bg-gray-900/80 transition-colors';
+    card.setAttribute('role', 'button');
+    card.tabIndex = 0;
+    card.title = 'Click to enlarge';
+    const imgSrc = parcelFrameUrl(result.capture_id, c.best_frame, c.best_bbox);
+    const frameDl = parcelFrameUrl(result.capture_id, c.best_frame, c.best_bbox, true);
+    const dlName = parcelClusterDownloadName(result, c);
+    const span = (c.frame_end ?? 0) - (c.frame_start ?? 0) + 1;
+    card.innerHTML = `
+      <img src="${imgSrc}" alt="cluster ${idx + 1}" class="w-28 h-20 object-cover rounded border border-gray-700 shrink-0 bg-black pointer-events-none" loading="lazy" />
+      <div class="min-w-0 flex-1 text-xs space-y-1 pointer-events-none">
+        <div class="font-medium text-indigo-300">#${idx + 1} ${escapeHtml(c.class_name)} <span class="text-gray-500">rank ${c.rank} · track ${c.track_id}</span></div>
+        <p class="text-gray-500">Frames ${c.frame_start}–${c.frame_end} (${span}) · ${parcelFilmSec(c.best_frame, result.fps)}</p>
+        <p class="text-gray-500">${c.detection_count} det. · conf ${(c.mean_confidence * 100).toFixed(1)}% · score ${c.score}</p>
+      </div>
+      <a href="${frameDl}" download="${escapeHtml(dlName)}" onclick="event.stopPropagation()"
+        class="self-center shrink-0 text-[10px] px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-indigo-300 border border-gray-700 pointer-events-auto">↓ JPG</a>
+    `;
+    card.addEventListener('click', () => openParcelClusterModal(idx));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openParcelClusterModal(idx); }
+    });
+    list.appendChild(card);
+  });
 }
 
 function renderParcelResult(result) {
   if (!result) return;
+  lastParcelResult = result;
   $('parcelTimingPreview').textContent = formatParcelTiming(result);
 
   const clipWrap = $('parcelClipWrap');
@@ -2771,27 +3091,7 @@ function renderParcelResult(result) {
     clipWrap.classList.add('hidden');
   }
 
-  const list = $('parcelClustersList');
-  list.innerHTML = '';
-  const clusters = result.clusters || [];
-  if (!clusters.length) {
-    list.innerHTML = '<p class="text-xs text-gray-600">No clusters in window.</p>';
-    return;
-  }
-  clusters.forEach(c => {
-    const card = document.createElement('div');
-    card.className = 'flex gap-3 bg-gray-950 border border-gray-800 rounded-lg p-3';
-    const imgSrc = parcelFrameUrl(result.capture_id, c.best_frame, c.best_bbox);
-    card.innerHTML = `
-      <img src="${imgSrc}" alt="cluster ${c.rank}" class="w-28 h-20 object-cover rounded border border-gray-700 shrink-0 bg-black" loading="lazy" />
-      <div class="min-w-0 flex-1 text-xs space-y-1">
-        <div class="font-medium text-indigo-300">#${c.rank} ${escapeHtml(c.class_name)} <span class="text-gray-500">track ${c.track_id}</span></div>
-        <p class="text-gray-500">Frames ${c.frame_start}–${c.frame_end} · best ${c.best_frame} · score ${c.score}</p>
-        <p class="text-gray-500">${c.detection_count} detections · conf ${(c.mean_confidence * 100).toFixed(1)}%</p>
-      </div>
-    `;
-    list.appendChild(card);
-  });
+  renderParcelClustersList();
 }
 
 function buildParcelAnalyzeFormData() {

@@ -80,6 +80,13 @@ Open [http://localhost:8000](http://localhost:8000).
 | **Train** | detect / segment / classify / pose; live logs and metrics |
 | **Models** | List runs, download `best.pt`, mAP chart |
 | **Infer** | Custom `.pt`, image or video inference, progress/cancel, nested bbox overlays, optional speed & class counters, detection modal with frame preview & download |
+| **Parcel** | Button time + conveyor offset → top clusters, sortable frames, ZIP download |
+
+## API docs & Postman
+
+- **Swagger UI:** [http://localhost:8001/docs](http://localhost:8001/docs) (after `docker compose up`)
+- **ReDoc:** `/redoc`
+- **Postman:** import `postman/YOLOlizer.postman_collection.json` + `postman/YOLOlizer.local.postman_environment.json` (see `postman/README.md`)
 
 ---
 

@@ -7,6 +7,9 @@ services:
       # Persist training data, labels, uploads, and model runs on the host
       - ./data:/app/data
       - ./runs:/app/runs
+      # Live code from host (same UI/API as git — no rebuild for HTML/parcel changes)
+      - ./frontend:/app/frontend
+      - ./backend:/app/backend
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1

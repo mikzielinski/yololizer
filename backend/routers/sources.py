@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 import aiofiles
 import cv2
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.config import (
@@ -39,6 +39,17 @@ def _is_video(filename: str) -> bool:
 def _safe_stem(name: str) -> str:
     stem = re.sub(r"[^\w\-]+", "_", name.strip())[:80]
     return stem or "video"
+
+
+def _delete_extracted_frames_for_stem(video_stem: str) -> int:
+    """Remove annotation frames extracted from a video (prefix: {safe_stem}_frame*.jpg)."""
+    prefix = f"{_safe_stem(video_stem)}_frame"
+    deleted = 0
+    for p in FRAMES_DIR.glob(f"{prefix}*.jpg"):
+        if p.is_file():
+            p.unlink(missing_ok=True)
+            deleted += 1
+    return deleted
 
 
 def _extract_frames(
@@ -286,14 +297,34 @@ async def list_videos():
     videos = []
     for p in sorted(VIDEOS_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
         if p.is_file() and p.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
+            st = p.stat()
             videos.append(
                 {
                     "filename": p.name,
-                    "size": p.stat().st_size,
+                    "size": st.st_size,
+                    "size_mb": round(st.st_size / 1024 / 1024, 2),
+                    "modified_at": st.st_mtime,
                     "play_url": f"/api/sources/video/{p.name}",
                 }
             )
     return {"videos": videos, "count": len(videos)}
+
+
+@router.delete("/videos/{filename}")
+async def delete_video(
+    filename: str,
+    delete_frames: bool = Query(False, description="Also delete extracted annotation frames from this video"),
+):
+    """Remove a saved recording from the video library."""
+    path = VIDEOS_DIR / Path(filename).name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Video not found: {filename}")
+    if path.suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Not a video file")
+
+    frames_deleted = _delete_extracted_frames_for_stem(path.stem) if delete_frames else 0
+    path.unlink(missing_ok=True)
+    return {"deleted": path.name, "frames_deleted": frames_deleted}
 
 
 @router.get("/video/{filename}")

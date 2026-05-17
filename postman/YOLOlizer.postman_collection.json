@@ -1,0 +1,979 @@
+{
+  "info": {
+    "name": "YOLOlizer API",
+    "description": "\n# YOLOlizer API\n\nLocal web service for **YOLO training**, **annotation**, **inference**, and **parcel capture**.\n\n## Quick start\n\n| Step | Action |\n|------|--------|\n| 1 | `GET /health` \u2014 verify API is up |\n| 2 | Upload data via **sources** (images, YouTube, video library) |\n| 3 | Annotate via **labels** |\n| 4 | **training** \u2192 poll `/status`, stream `/logs` (SSE) |\n| 5 | **inference** or **parcel** on videos |\n\n## Interactive docs\n\n- **Swagger UI:** `/docs`\n- **ReDoc:** `/redoc`\n- **OpenAPI JSON:** `/openapi.json`\n\n## Background jobs\n\nSeveral endpoints return `{ \"job_id\": \"...\", \"status\": \"started\" }`. Poll the matching status route until `status` is `done`, `error`, or `cancelled`:\n\n| Feature | Start | Status | Cancel |\n|---------|-------|--------|--------|\n| YouTube download | `POST /api/sources/youtube` | `GET .../youtube/status/{job_id}` | `POST .../youtube/cancel/{job_id}` |\n| Video inference | `POST /api/infer/video` | `GET .../video/status/{job_id}` | `POST .../video/cancel/{job_id}` |\n| Parcel analyze | `POST /api/parcel/analyze` | `GET .../status/{job_id}` | `POST .../cancel/{job_id}` |\n\n## Parcel timing\n\n- `travel_real_sec = distance_m / speed_m_per_s`\n- `travel_film_sec = travel_real_sec \u00d7 real_to_film_ratio`\n- `arrival_film_sec = button_film_sec + travel_film_sec`\n\n`real_to_film_ratio`: seconds on **film** per 1 second **real** (e.g. `0.5` \u2192 1 s real = 0.5 s on film).\n\n## CORS\n\nAll origins allowed \u2014 the GitHub Pages UI can call a local API.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns `{\"status\": \"ok\"}` when the API is running."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Inference",
+      "item": [
+        {
+          "name": "Upload .pt model",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/upload-model",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "upload-model"
+              ]
+            },
+            "description": "Store a custom weights file for inference / parcel."
+          },
+          "response": []
+        },
+        {
+          "name": "List inference models",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/models",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "models"
+              ]
+            },
+            "description": "All `.pt` files in `data/inference/models/`."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete inference model",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/models/{filename}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "models",
+                "{filename}"
+              ]
+            },
+            "description": "Remove an uploaded `.pt` file."
+          },
+          "response": []
+        },
+        {
+          "name": "Infer on image",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/image",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "image"
+              ]
+            },
+            "description": "Synchronous detection; returns annotated JPEG URL and detection list."
+          },
+          "response": []
+        },
+        {
+          "name": "Infer on video (async)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/video",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "video"
+              ]
+            },
+            "description": "Provide `file` **or** `source_filename` (library video). Optional overlays: `show_speed`, `show_class_overlay`, `show_class_total` (0/1). Poll `/video/status/{job_id}`."
+          },
+          "response": []
+        },
+        {
+          "name": "Video inference job status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/video/status/{job_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "video",
+                "status",
+                "{job_id}"
+              ]
+            },
+            "description": "When `done`, `result` contains `result_id`, video URL, detection report."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel video inference",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/video/cancel/{job_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "video",
+                "cancel",
+                "{job_id}"
+              ]
+            },
+            "description": "Cancel queued/running inference job."
+          },
+          "response": []
+        },
+        {
+          "name": "Video detection report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/result/{result_id}/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "result",
+                "{result_id}",
+                "report"
+              ]
+            },
+            "description": "JSON stats: per-frame detections, class totals, speeds (video results only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Download result file",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/result/{filename}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "result",
+                "{filename}"
+              ]
+            },
+            "description": "Annotated `.jpg` or `.mp4` by filename."
+          },
+          "response": []
+        },
+        {
+          "name": "Extract result video frame",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/result/{result_id}/frame/{frame_index}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "result",
+                "{result_id}",
+                "frame",
+                "{frame_index}"
+              ]
+            },
+            "description": "JPEG from annotated result video; optional bbox query params to highlight."
+          },
+          "response": []
+        },
+        {
+          "name": "List past results",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "results"
+              ]
+            },
+            "description": "Saved images and videos under `data/inference/results/`."
+          },
+          "response": []
+        },
+        {
+          "name": "Transcode result for browser",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/results/{result_id}/transcode",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "results",
+                "{result_id}",
+                "transcode"
+              ]
+            },
+            "description": "Re-encode MP4 to H.264 + faststart if playback fails."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete result",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/infer/results/{filename}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "infer",
+                "results",
+                "{filename}"
+              ]
+            },
+            "description": "Remove result media and associated report JSON."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Labels",
+      "item": [
+        {
+          "name": "List class names",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/labels/classes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "labels",
+                "classes"
+              ]
+            },
+            "description": "Names from `data/classes.txt` used for training and UI."
+          },
+          "response": []
+        },
+        {
+          "name": "Save class names",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/labels/classes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "labels",
+                "classes"
+              ]
+            },
+            "description": "Replace entire class list (order = class id)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get annotations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/labels/{image_name}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "labels",
+                "{image_name}"
+              ]
+            },
+            "description": "YOLO labels for one image (bbox or polygon per line)."
+          },
+          "response": []
+        },
+        {
+          "name": "Save annotations",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/labels/{image_name}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "labels",
+                "{image_name}"
+              ]
+            },
+            "description": "Overwrite `.txt` label file for the image stem."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Models",
+      "item": [
+        {
+          "name": "List training runs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/models",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "models"
+              ]
+            },
+            "description": "Subdirectories of `runs/` with optional mAP from `results.csv`."
+          },
+          "response": []
+        },
+        {
+          "name": "Download best.pt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/models/download/{run_name}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "models",
+                "download",
+                "{run_name}"
+              ]
+            },
+            "description": "Weights file for a completed run."
+          },
+          "response": []
+        },
+        {
+          "name": "Training metrics CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/models/{run_name}/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "models",
+                "{run_name}",
+                "metrics"
+              ]
+            },
+            "description": "Parsed `results.csv` as JSON rows."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Parcel",
+      "item": [
+        {
+          "name": "Preview parcel timing",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/preview-timing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "preview-timing"
+              ]
+            },
+            "description": "Compute arrival window on film timeline **without** running YOLO."
+          },
+          "response": []
+        },
+        {
+          "name": "Analyze parcel window (async)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "analyze"
+              ]
+            },
+            "description": "Detect objects in time window around expected arrival. Video: `file`, `source_filename`, or `result_video_id`. Poll `/status/{job_id}`."
+          },
+          "response": []
+        },
+        {
+          "name": "Parcel job status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/status/{job_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "status",
+                "{job_id}"
+              ]
+            },
+            "description": "When `done`, `result` has `capture_id`, `clusters`, `clip_url`, timing fields."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel parcel job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/cancel/{job_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "cancel",
+                "{job_id}"
+              ]
+            },
+            "description": "Cancel queued/running parcel analysis."
+          },
+          "response": []
+        },
+        {
+          "name": "Download parcel clip",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/clip/{capture_id}.mp4",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "clip",
+                "{capture_id}.mp4"
+              ]
+            },
+            "description": "Short MP4 cut around the analysis window."
+          },
+          "response": []
+        },
+        {
+          "name": "Parcel capture metadata",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/meta/{capture_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "meta",
+                "{capture_id}"
+              ]
+            },
+            "description": "Saved clusters, fps, video path for a capture id."
+          },
+          "response": []
+        },
+        {
+          "name": "Parcel cluster frame",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/frame/{capture_id}/{frame_index}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "frame",
+                "{capture_id}",
+                "{frame_index}"
+              ]
+            },
+            "description": "JPEG from source video; optional `x1,y1,x2,y2` to draw bbox. `download=true` for attachment."
+          },
+          "response": []
+        },
+        {
+          "name": "Download top frames ZIP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/parcel/frames-zip/{capture_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "parcel",
+                "frames-zip",
+                "{capture_id}"
+              ]
+            },
+            "description": "ZIP of best-frame JPEGs for each saved cluster."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sources",
+      "item": [
+        {
+          "name": "List images",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "images"
+              ]
+            },
+            "description": "All images in uploads and extracted frames (`data/frames/`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload images",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "images"
+              ]
+            },
+            "description": "Multipart upload of one or more images into `data/uploads/`."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload video & extract frames",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/video",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "video"
+              ]
+            },
+            "description": "Upload a video file; extract every Nth frame to `data/frames/` for annotation. Does not add to video library."
+          },
+          "response": []
+        },
+        {
+          "name": "Download YouTube video",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/youtube",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "youtube"
+              ]
+            },
+            "description": "**mode:** `watch` (save to library), `extract` (frames only), `both`. Returns `job_id` \u2014 poll `/youtube/status/{job_id}`."
+          },
+          "response": []
+        },
+        {
+          "name": "YouTube job status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/youtube/status/{job_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "youtube",
+                "status",
+                "{job_id}"
+              ]
+            },
+            "description": "Fields: `status`, `progress` (0\u20131), `message`, `result` when done."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel YouTube job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/youtube/cancel/{job_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "youtube",
+                "cancel",
+                "{job_id}"
+              ]
+            },
+            "description": "Best-effort cancel for queued/running download."
+          },
+          "response": []
+        },
+        {
+          "name": "List video library",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/videos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "videos"
+              ]
+            },
+            "description": "Saved recordings in `data/uploads/videos/` (YouTube downloads)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete recording",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/videos/{filename}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "videos",
+                "{filename}"
+              ]
+            },
+            "description": "Remove from library. Set `delete_frames=true` to also remove extracted annotation frames."
+          },
+          "response": []
+        },
+        {
+          "name": "Stream library video",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/video/{filename}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "video",
+                "{filename}"
+              ]
+            },
+            "description": "MP4 (or other allowed format) for browser playback."
+          },
+          "response": []
+        },
+        {
+          "name": "Webcam MJPEG stream",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/webcam/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "webcam",
+                "stream"
+              ]
+            },
+            "description": "Live multipart JPEG stream from camera index 0."
+          },
+          "response": []
+        },
+        {
+          "name": "Capture webcam frame",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/webcam/capture",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "webcam",
+                "capture"
+              ]
+            },
+            "description": "Save a single JPEG snapshot to uploads."
+          },
+          "response": []
+        },
+        {
+          "name": "Serve image",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sources/image/{filename}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sources",
+                "image",
+                "{filename}"
+              ]
+            },
+            "description": "JPEG/PNG file by filename (searches uploads and frames)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Training",
+      "item": [
+        {
+          "name": "Start training",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/training/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "training",
+                "start"
+              ]
+            },
+            "description": "Build dataset from labeled images, train YOLO in background. Returns immediately."
+          },
+          "response": []
+        },
+        {
+          "name": "Training status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/training/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "training",
+                "status"
+              ]
+            },
+            "description": "`status`: idle | preparing | training | done | error | stopped"
+          },
+          "response": []
+        },
+        {
+          "name": "Stop training",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/training/stop",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "training",
+                "stop"
+              ]
+            },
+            "description": "Request graceful stop (best-effort)."
+          },
+          "response": []
+        },
+        {
+          "name": "Training logs (SSE)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/training/logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "training",
+                "logs"
+              ]
+            },
+            "description": "Server-Sent Events stream of stdout during training."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8001"
+    }
+  ]
+}

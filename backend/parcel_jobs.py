@@ -74,7 +74,14 @@ def run_parcel_job(
                 {
                     "capture_id": result["capture_id"],
                     "video_path": str(video_path.resolve()),
-                }
+                    "fps": result.get("fps"),
+                    "clusters": result.get("clusters", []),
+                    "button_film_sec": result.get("button_film_sec"),
+                    "arrival_film_sec": result.get("arrival_film_sec"),
+                    "window_start_film_sec": result.get("window_start_film_sec"),
+                    "window_end_film_sec": result.get("window_end_film_sec"),
+                },
+                indent=2,
             ),
             encoding="utf-8",
         )

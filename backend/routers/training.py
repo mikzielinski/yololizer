@@ -32,13 +32,23 @@ router = APIRouter(prefix="/api/training", tags=["training"])
 
 
 class TrainingConfig(BaseModel):
-    task: str = Field("detect", pattern="^(detect|segment|classify|pose)$")
-    model_size: str = Field("n", pattern="^(n|s|m|l|x)$")
-    epochs: int = Field(50, ge=1, le=1000)
-    imgsz: int = Field(640, ge=32, le=1920)
-    batch: int = Field(16, ge=-1)
-    lr0: float = Field(0.01, gt=0, le=1.0)
-    project_name: str = Field("yololizer_run")
+    """YOLO training hyperparameters (dataset built from labeled images)."""
+
+    task: str = Field(
+        "detect",
+        pattern="^(detect|segment|classify|pose)$",
+        description="Ultralytics task type",
+    )
+    model_size: str = Field(
+        "n",
+        pattern="^(n|s|m|l|x)$",
+        description="Base model size letter (yolov8{n,s,m,l,x})",
+    )
+    epochs: int = Field(50, ge=1, le=1000, description="Training epochs")
+    imgsz: int = Field(640, ge=32, le=1920, description="Input image size")
+    batch: int = Field(16, ge=-1, description="Batch size (-1 = auto)")
+    lr0: float = Field(0.01, gt=0, le=1.0, description="Initial learning rate")
+    project_name: str = Field("yololizer_run", description="Run folder name under runs/")
 
 
 # Global training state
