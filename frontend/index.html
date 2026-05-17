@@ -912,7 +912,7 @@
             </div>
             <div class="flex items-center gap-2 flex-wrap">
               <label for="parcelClusterSort" class="text-xs text-gray-500">Sort by</label>
-              <select id="parcelClusterSort" onchange="renderParcelClustersList()"
+              <select id="parcelClusterSort"
                 class="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-200">
                 <option value="score_desc">Score (high → low)</option>
                 <option value="score_asc">Score (low → high)</option>
@@ -3101,7 +3101,7 @@ function parcelFrameUrl(captureId, frameIndex, bbox, download = false) {
 }
 
 function parcelZipUrl(captureId, sort) {
-  const s = sort || $('parcelClusterSort')?.value || 'score_desc';
+  const s = sort || getParcelClusterSortId();
   return getApiBase() + `/api/parcel/frames-zip/${encodeURIComponent(captureId)}?sort=${encodeURIComponent(s)}`;
 }
 
@@ -3133,29 +3133,56 @@ function parcelClusterDetailRows(result, c) {
   ];
 }
 
-function parcelClusterSortKey(c, sortId, fps) {
-  const span = (c.frame_end ?? c.best_frame) - (c.frame_start ?? c.best_frame);
+function parcelClusterNum(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parcelClusterSortKey(c, sortId) {
+  const span = parcelClusterNum(c.frame_end) - parcelClusterNum(c.frame_start);
+  const frame = parcelClusterNum(c.best_frame);
+  const score = parcelClusterNum(c.score);
+  const conf = parcelClusterNum(c.mean_confidence);
+  const det = parcelClusterNum(c.detection_count);
+  const rank = parcelClusterNum(c.rank, 999);
   switch (sortId) {
-    case 'time_asc': return c.best_frame ?? 0;
-    case 'time_desc': return -(c.best_frame ?? 0);
-    case 'conf_desc': return -(c.mean_confidence ?? 0);
-    case 'conf_asc': return c.mean_confidence ?? 0;
-    case 'score_asc': return c.score ?? 0;
-    case 'detections_desc': return -(c.detection_count ?? 0);
-    case 'detections_asc': return c.detection_count ?? 0;
+    case 'time_asc': return frame;
+    case 'time_desc': return -frame;
+    case 'conf_desc': return -conf;
+    case 'conf_asc': return conf;
+    case 'score_asc': return score;
+    case 'detections_desc': return -det;
+    case 'detections_asc': return det;
     case 'frame_span_desc': return -span;
-    case 'rank': return c.rank ?? 999;
+    case 'rank': return rank;
     case 'score_desc':
-    default: return -(c.score ?? 0);
+    default: return -score;
   }
+}
+
+function compareParcelClusters(a, b, sortId) {
+  const diff = parcelClusterSortKey(a, sortId) - parcelClusterSortKey(b, sortId);
+  if (diff !== 0) return diff;
+  return parcelClusterNum(a.best_frame) - parcelClusterNum(b.best_frame)
+    || parcelClusterNum(a.track_id) - parcelClusterNum(b.track_id);
+}
+
+function getParcelClusterSortId() {
+  const sel = document.getElementById('parcelClusterSort');
+  return sel?.value || 'score_desc';
 }
 
 function getSortedParcelClusters() {
   if (!lastParcelResult?.clusters?.length) return [];
-  const sortId = $('parcelClusterSort')?.value || 'score_desc';
-  return [...lastParcelResult.clusters].sort(
-    (a, b) => parcelClusterSortKey(a, sortId) - parcelClusterSortKey(b, sortId)
-  );
+  const sortId = getParcelClusterSortId();
+  return [...lastParcelResult.clusters].sort((a, b) => compareParcelClusters(a, b, sortId));
+}
+
+function bindParcelClusterSortControl() {
+  const sel = document.getElementById('parcelClusterSort');
+  if (!sel || sel.dataset.sortBound === '1') return;
+  sel.dataset.sortBound = '1';
+  sel.addEventListener('change', () => renderParcelClustersList());
 }
 
 function fillParcelClusterModal(index) {
@@ -3249,7 +3276,14 @@ function renderParcelClustersList() {
 
 function renderParcelResult(result) {
   if (!result) return;
-  lastParcelResult = result;
+  lastParcelResult = {
+    ...result,
+    clusters: (result.clusters || []).map(c => ({
+      ...c,
+      best_bbox: Array.isArray(c.best_bbox) ? [...c.best_bbox] : c.best_bbox,
+    })),
+  };
+  bindParcelClusterSortControl();
   $('parcelTimingPreview').textContent = formatParcelTiming(result);
 
   const clipWrap = $('parcelClipWrap');
@@ -3329,6 +3363,7 @@ async function runParcelCapture() {
 // =========================================================
 (function init() {
   maybeShowApiSettings();
+  bindParcelClusterSortControl();
   checkHealth();
   setInterval(checkHealth, 30000);
   loadGallery();
