@@ -2,7 +2,7 @@ services:
   yololizer:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       # Persist training data, labels, uploads, and model runs on the host
       - ./data:/app/data

@@ -41,9 +41,30 @@
     /* Blinking cursor for terminal */
     @keyframes blink { 50% { opacity: 0; } }
     .cursor-blink { animation: blink 1s step-end infinite; }
+
+    #videoDetectionsModal:not(.hidden) { display: flex; }
+
+    .infer-video-wrap { position: relative; display: block; }
+    #inferVideoFrameBadge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 2;
+      pointer-events: none;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #a5f3fc;
+      border: 1px solid rgba(99, 102, 241, 0.45);
+      letter-spacing: 0.02em;
+    }
   </style>
 </head>
 <body class="h-full flex flex-col text-gray-100 bg-gray-950" x-data>
+<script src="config.js"></script>
 
 <!-- ===== TOP BAR ===== -->
 <header class="flex items-center gap-3 px-5 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
@@ -53,7 +74,14 @@
   </svg>
   <span class="text-lg font-bold tracking-tight text-white">YOLOlizer</span>
   <span class="ml-2 text-xs text-gray-500 font-mono">local yolo trainer</span>
-  <div class="ml-auto flex items-center gap-2 text-xs text-gray-500">
+  <div id="apiUrlWrap" class="ml-auto hidden items-center gap-2 flex-wrap justify-end max-w-md">
+    <label for="apiUrlInput" class="text-xs text-gray-500 shrink-0">API</label>
+    <input id="apiUrlInput" type="url" placeholder="http://127.0.0.1:8001"
+      class="w-40 sm:w-52 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-indigo-500" />
+    <button type="button" onclick="saveApiUrl()"
+      class="px-2 py-1 text-xs rounded bg-indigo-700 hover:bg-indigo-600 text-white shrink-0">Connect</button>
+  </div>
+  <div class="flex items-center gap-2 text-xs text-gray-500 shrink-0">
     <span id="healthDot" class="w-2 h-2 rounded-full bg-gray-600 inline-block"></span>
     <span id="healthLabel">connecting…</span>
   </div>
@@ -148,23 +176,80 @@
           <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
           </svg>
-          Upload Video (Extract Frames)
+          Video Source
         </h3>
-        <div class="flex gap-3 items-end flex-wrap">
+        <div class="flex gap-2 mb-4">
+          <button type="button" id="videoSrcFileBtn" onclick="setVideoSource('file')"
+            class="px-3 py-1.5 text-sm rounded border border-indigo-500 bg-indigo-600 text-white transition-colors">
+            Upload file
+          </button>
+          <button type="button" id="videoSrcYoutubeBtn" onclick="setVideoSource('youtube')"
+            class="px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors">
+            YouTube URL
+          </button>
+        </div>
+        <div id="videoFrameIntervalWrap" class="mb-3">
+          <label class="text-xs text-gray-500 block mb-1">Every N frames (annotation only)</label>
+          <input id="frameInterval" type="number" value="30" min="1" max="1000"
+            class="w-20 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200" />
+        </div>
+        <div id="videoSourceFile" class="flex gap-3 items-end flex-wrap">
           <div>
             <label class="text-xs text-gray-500 block mb-1">Video file</label>
             <input id="videoFileInput" type="file" accept="video/*"
               class="text-sm text-gray-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-indigo-700 file:text-white file:cursor-pointer cursor-pointer" />
           </div>
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">Every N frames</label>
-            <input id="frameInterval" type="number" value="30" min="1" max="1000"
-              class="w-20 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200" />
-          </div>
           <button onclick="uploadVideo()"
             class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded transition-colors">
             Extract Frames
           </button>
+        </div>
+        <div id="videoSourceYoutube" class="hidden">
+          <label class="text-xs text-gray-500 block mb-1">YouTube video URL</label>
+          <div class="flex gap-3 items-end flex-wrap">
+            <input id="youtubeUrlInput" type="url" placeholder="https://www.youtube.com/watch?v=…"
+              class="flex-1 min-w-[200px] bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600" />
+            <button onclick="downloadYoutubeWatch()"
+              class="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white text-sm rounded transition-colors">
+              Download &amp; Watch
+            </button>
+          </div>
+          <div id="youtubePlayerWrap" class="hidden mb-3 mt-3">
+            <video id="youtubePlayer" controls class="w-full rounded-lg border border-gray-700 max-h-80 bg-black">
+              Your browser does not support video.
+            </video>
+            <p id="youtubePlayerTitle" class="text-xs text-gray-500 mt-1"></p>
+          </div>
+          <details class="text-sm text-gray-400 mt-2">
+            <summary class="cursor-pointer hover:text-gray-300 mb-2">Optional: extract frames for annotation</summary>
+            <div class="flex gap-3 items-end flex-wrap mb-2">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Every N frames</label>
+                <input id="youtubeFrameInterval" type="number" value="30" min="1" max="1000"
+                  class="w-20 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200" />
+              </div>
+              <button type="button" onclick="downloadYoutubeExtract()"
+                class="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors">
+                Extract frames
+              </button>
+            </div>
+          </details>
+          <p class="text-gray-600 text-xs mt-2">Run a model on the full video in the <button type="button" onclick="showTab('infer')" class="text-indigo-400 underline">Infer</button> tab.</p>
+        </div>
+        <div id="videoProgress" class="hidden mt-3">
+          <div class="flex justify-between text-xs text-gray-400 mb-1">
+            <span id="videoProgressText" class="truncate">Working…</span>
+            <span class="flex items-center gap-2 shrink-0">
+              <span id="videoProgressPct">0%</span>
+              <button type="button" id="videoCancelBtn" onclick="cancelActiveJob('video')"
+                class="hidden px-2 py-0.5 rounded bg-gray-700 hover:bg-red-700 text-gray-200 text-xs transition-colors">
+                Cancel
+              </button>
+            </span>
+          </div>
+          <div class="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+            <div id="videoProgressBar" class="bg-red-600 h-2.5 rounded-full transition-all duration-300 ease-out" style="width:0%"></div>
+          </div>
         </div>
         <div id="videoStatus" class="mt-3 text-sm text-gray-400"></div>
       </div>
@@ -499,6 +584,18 @@
                 class="hidden" onchange="selectInferSource(this.files)"/>
             </div>
 
+            <div class="mt-3 pt-3 border-t border-gray-800">
+              <label class="text-xs text-gray-500 block mb-1">Or YouTube URL</label>
+              <div class="flex gap-2 flex-wrap">
+                <input id="inferYoutubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=…"
+                  class="flex-1 min-w-[200px] bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600" />
+                <button type="button" onclick="loadInferYoutube()"
+                  class="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-sm rounded transition-colors shrink-0">
+                  Load video
+                </button>
+              </div>
+            </div>
+
             <!-- Source preview -->
             <div id="inferSourcePreview" class="hidden mt-3 flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
               <svg class="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -507,6 +604,9 @@
               <span id="inferSourceName" class="text-sm text-gray-300 truncate flex-1"></span>
               <span id="inferSourceSize" class="text-xs text-gray-500 shrink-0"></span>
               <button onclick="clearInferSource()" class="text-gray-500 hover:text-red-400 text-xs ml-2">✕</button>
+            </div>
+            <div id="inferSourceVideoWrap" class="hidden mt-3">
+              <video id="inferSourceVideo" controls class="w-full rounded-lg border border-gray-700 max-h-48 bg-black"></video>
             </div>
           </div>
 
@@ -540,6 +640,22 @@
               </div>
             </div>
 
+            <div id="inferVideoOverlayWrap" class="hidden mt-4 pt-4 border-t border-gray-800 space-y-2">
+              <p class="text-xs text-gray-500 mb-2">Video overlays (optional)</p>
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input id="inferShowSpeed" type="checkbox" class="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500"/>
+                <span class="text-sm text-gray-300">Average object speed in corner <span class="text-gray-500">(px/s on tracked boxes)</span></span>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input id="inferShowClassCount" type="checkbox" class="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500"/>
+                <span class="text-sm text-gray-300">Class counter — frame <span class="text-gray-500">(current frame, top-right)</span></span>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input id="inferShowClassTotal" type="checkbox" class="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500"/>
+                <span class="text-sm text-gray-300">Class counter — total <span class="text-gray-500">(unique objects, bottom-right)</span></span>
+              </label>
+            </div>
+
             <button id="inferRunBtn" onclick="runInference()"
               class="mt-4 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -550,12 +666,18 @@
 
             <!-- Progress -->
             <div id="inferProgress" class="hidden mt-3">
-              <div class="flex items-center gap-2 text-sm text-gray-400">
-                <svg class="w-4 h-4 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
-                <span id="inferProgressText">Processing…</span>
+              <div class="flex justify-between text-xs text-gray-400 mb-1">
+                <span id="inferProgressText" class="truncate">Processing…</span>
+                <span class="flex items-center gap-2 shrink-0">
+                  <span id="inferProgressPct">0%</span>
+                  <button type="button" id="inferCancelBtn" onclick="cancelActiveJob('infer')"
+                    class="hidden px-2 py-0.5 rounded bg-gray-700 hover:bg-red-700 text-gray-200 text-xs transition-colors">
+                    Cancel
+                  </button>
+                </span>
+              </div>
+              <div class="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+                <div id="inferProgressBar" class="bg-indigo-500 h-2.5 rounded-full transition-all duration-300 ease-out" style="width:0%"></div>
               </div>
             </div>
           </div>
@@ -584,10 +706,14 @@
 
             <!-- Video result -->
             <div id="inferVideoResult" class="hidden">
-              <video id="inferResultVideo" controls
-                class="w-full rounded-lg border border-gray-700 max-h-96">
-                Your browser does not support video.
-              </video>
+              <div class="infer-video-wrap">
+                <span id="inferVideoFrameBadge" class="hidden">Frame 0</span>
+                <video id="inferResultVideo" controls playsinline preload="metadata"
+                  class="w-full rounded-lg border border-gray-700 max-h-96 bg-black">
+                  Your browser does not support video.
+                </video>
+              </div>
+              <p id="inferVideoError" class="hidden text-xs text-red-400 mt-2"></p>
             </div>
 
             <!-- Placeholder -->
@@ -616,14 +742,27 @@
                 <div id="inferStatFrames" class="text-xl font-bold text-indigo-400">—</div>
                 <div class="text-xs text-gray-500 mt-0.5">Frames</div>
               </div>
-              <div class="bg-gray-800 rounded-lg p-3 text-center">
+              <div id="inferStatDetectionsCard" role="button" tabindex="0"
+                onclick="openVideoDetectionsModal()"
+                onkeydown="if(event.key==='Enter'||event.key===' ')openVideoDetectionsModal()"
+                class="bg-gray-800 rounded-lg p-3 text-center cursor-pointer hover:bg-gray-700 hover:ring-1 hover:ring-green-500/50 transition-all"
+                title="Click to view detection breakdown">
                 <div id="inferStatDetections" class="text-xl font-bold text-green-400">—</div>
                 <div class="text-xs text-gray-500 mt-0.5">Detections</div>
+                <div class="text-[10px] text-green-500/70 mt-1">click for details</div>
               </div>
               <div class="bg-gray-800 rounded-lg p-3 text-center">
                 <div id="inferStatSize" class="text-xl font-bold text-yellow-400">—</div>
                 <div class="text-xs text-gray-500 mt-0.5">Size (MB)</div>
               </div>
+            </div>
+            <p id="inferStatSpeed" class="hidden text-xs text-cyan-400/90 mt-3 text-center"></p>
+            <div id="inferClassTotalsWrap" class="hidden mt-4 pt-4 border-t border-gray-800">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-sm font-medium text-amber-200/90">Class totals</h4>
+                <span class="text-[10px] text-gray-500">unique objects</span>
+              </div>
+              <div id="inferClassTotalsList" class="flex flex-col gap-1 max-h-40 overflow-y-auto text-xs"></div>
             </div>
           </div>
 
@@ -643,7 +782,58 @@
     </div><!-- /tab-infer -->
 
   </main>
+
 </div><!-- /main layout -->
+
+<!-- Video detections modal -->
+<div id="videoDetectionsModal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/70 p-4"
+  onclick="if(event.target===this)closeVideoDetectionsModal()">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl"
+    onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800 shrink-0">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-100">Detection breakdown</h3>
+        <p id="videoDetectionsModalSubtitle" class="text-xs text-gray-500 mt-0.5"></p>
+      </div>
+      <button type="button" onclick="closeVideoDetectionsModal()"
+        class="text-gray-400 hover:text-white text-xl leading-none px-2">&times;</button>
+    </div>
+    <div class="flex flex-1 min-h-0">
+      <div class="flex-1 overflow-y-auto p-5 space-y-4 border-r border-gray-800">
+        <section>
+          <h4 class="text-sm font-medium text-gray-300 mb-2">By class</h4>
+          <div id="videoDetectionsSummary" class="space-y-2"></div>
+        </section>
+        <section>
+          <h4 class="text-sm font-medium text-gray-300 mb-2">Top 100 per class <span class="text-gray-500 font-normal">(click row for frame)</span></h4>
+          <div id="videoDetectionsByClass" class="space-y-3"></div>
+        </section>
+      </div>
+      <div class="w-80 shrink-0 flex flex-col bg-gray-950/50 p-4">
+        <h4 class="text-sm font-medium text-gray-300 mb-2">Frame preview</h4>
+        <div id="framePreviewPlaceholder" class="flex-1 flex items-center justify-center text-xs text-gray-600 text-center border border-dashed border-gray-700 rounded-lg p-4">
+          Click a detection row to preview that frame
+        </div>
+        <img id="framePreviewImg" src="" alt="Frame preview" class="hidden w-full rounded-lg border border-gray-700 object-contain max-h-64" />
+        <p id="framePreviewMeta" class="text-xs text-gray-500 mt-2"></p>
+        <button type="button" id="framePreviewSeekBtn" onclick="seekResultVideoToPreview()"
+          class="hidden mt-2 w-full py-1.5 text-xs rounded bg-indigo-700 hover:bg-indigo-600 text-white transition-colors">
+          Play at this frame in result video
+        </button>
+        <div class="mt-2 flex flex-col gap-1.5">
+          <a id="framePreviewDownload" href="#" download
+            class="hidden w-full py-1.5 text-xs text-center rounded bg-gray-800 hover:bg-gray-700 text-indigo-300 border border-gray-700 transition-colors">
+            Download this frame
+          </a>
+          <a id="modalResultVideoDownload" href="#" download
+            class="w-full py-1.5 text-xs text-center rounded bg-gray-800 hover:bg-gray-700 text-indigo-300 border border-gray-700 transition-colors">
+            Download result video
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ===================================================== -->
 <!-- JAVASCRIPT                                            -->
@@ -654,7 +844,41 @@
 // =========================================================
 // Global state
 // =========================================================
-const API = '';  // same origin
+function getApiBase() {
+  if (typeof window.YOLOlIZER_API === 'string' && window.YOLOlIZER_API.trim()) {
+    return window.YOLOlIZER_API.trim().replace(/\/$/, '');
+  }
+  const stored = localStorage.getItem('yololizer_api');
+  if (stored) return stored.trim().replace(/\/$/, '');
+  return '';
+}
+
+function saveApiUrl() {
+  const raw = $('apiUrlInput').value.trim();
+  if (!raw) {
+    localStorage.removeItem('yololizer_api');
+    window.YOLOlIZER_API = '';
+    toast('API cleared — using same origin', 'info');
+  } else {
+    const base = raw.replace(/\/$/, '');
+    localStorage.setItem('yololizer_api', base);
+    window.YOLOlIZER_API = base;
+    toast('API set to ' + base, 'success');
+  }
+  checkHealth();
+}
+
+function maybeShowApiSettings() {
+  const wrap = $('apiUrlWrap');
+  const onPages = location.hostname.endsWith('github.io') || location.pathname.includes('/yololizer');
+  if (onPages || !getApiBase()) {
+    wrap.classList.remove('hidden');
+    wrap.classList.add('flex');
+    if (!$('apiUrlInput').value) {
+      $('apiUrlInput').value = getApiBase() || 'http://127.0.0.1:8001';
+    }
+  }
+}
 
 let currentTab = 'sources';
 
@@ -701,7 +925,7 @@ function toast(msg, type = 'info') {
 }
 
 async function apiFetch(path, opts = {}) {
-  const res = await fetch(API + path, opts);
+  const res = await fetch(getApiBase() + path, opts);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${res.status}`);
@@ -725,7 +949,7 @@ function classColor(idx) {
 // =========================================================
 async function checkHealth() {
   try {
-    const res = await fetch(API + '/health');
+    const res = await fetch(getApiBase() + '/health');
     if (res.ok) {
       $('healthDot').className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block';
       $('healthLabel').textContent = 'connected';
@@ -733,6 +957,7 @@ async function checkHealth() {
   } catch {
     $('healthDot').className = 'w-2 h-2 rounded-full bg-red-400 inline-block';
     $('healthLabel').textContent = 'offline';
+    maybeShowApiSettings();
   }
 }
 
@@ -828,6 +1053,85 @@ async function loadGallery() {
   }
 }
 
+function setVideoSource(mode) {
+  const isYoutube = mode === 'youtube';
+  $('videoSourceFile').classList.toggle('hidden', isYoutube);
+  $('videoSourceYoutube').classList.toggle('hidden', !isYoutube);
+  $('videoFrameIntervalWrap').classList.toggle('hidden', isYoutube);
+  const active = 'px-3 py-1.5 text-sm rounded border border-indigo-500 bg-indigo-600 text-white transition-colors';
+  const inactive = 'px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors';
+  $('videoSrcFileBtn').className = isYoutube ? inactive : active;
+  $('videoSrcYoutubeBtn').className = isYoutube ? active : inactive;
+}
+
+async function postYoutube(url, mode, progressPrefix) {
+  const prefix = progressPrefix || 'video';
+  const fd = new FormData();
+  fd.append('url', url);
+  fd.append('mode', mode);
+  if (mode !== 'watch') {
+    const n = $('youtubeFrameInterval')?.value || $('frameInterval').value;
+    fd.append('frame_interval', n);
+  }
+  const res = await apiFetch('/api/sources/youtube', { method: 'POST', body: fd });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'YouTube request failed');
+  }
+  const { job_id } = await res.json();
+  const jobKind = prefix === 'infer' ? 'infer' : 'video';
+  setActiveJob(jobKind, job_id, `/api/sources/youtube/cancel/${job_id}`);
+  return pollJob(`/api/sources/youtube/status/${job_id}`, (data) => {
+    setProgressUi(prefix + 'Progress', prefix + 'ProgressBar', prefix + 'ProgressText', prefix + 'ProgressPct', true,
+      data.progress, data.message, data.status === 'queued');
+  }, jobKind);
+}
+
+function showYoutubePlayer(data) {
+  const player = $('youtubePlayer');
+  player.src = data.play_url + '?t=' + Date.now();
+  $('youtubePlayerTitle').textContent = data.video;
+  $('youtubePlayerWrap').classList.remove('hidden');
+  window.lastYoutubeVideo = { filename: data.filename, title: data.video, play_url: data.play_url };
+}
+
+async function downloadYoutubeWatch() {
+  const url = $('youtubeUrlInput').value.trim();
+  if (!url) { toast('Paste a YouTube URL first', 'warn'); return; }
+  $('videoStatus').textContent = '';
+  try {
+    const data = await postYoutube(url, 'watch');
+    setProgressUi('videoProgress', 'videoProgressBar', 'videoProgressText', 'videoProgressPct', false, 1, '');
+    showYoutubePlayer(data);
+    $('videoStatus').textContent = `Ready: "${data.video}" — watch below or process in Infer tab`;
+    toast('Video downloaded', 'success');
+  } catch (err) {
+    setProgressUi('videoProgress', 'videoProgressBar', 'videoProgressText', 'videoProgressPct', false, 0, '');
+    $('videoStatus').textContent = isCancelledError(err.message) ? 'Cancelled.' : 'Failed: ' + err.message;
+    toast(isCancelledError(err.message) ? 'Download cancelled' : 'YouTube download failed: ' + err.message,
+      isCancelledError(err.message) ? 'info' : 'error');
+  }
+}
+
+async function downloadYoutubeExtract() {
+  const url = $('youtubeUrlInput').value.trim();
+  if (!url) { toast('Paste a YouTube URL first', 'warn'); return; }
+  $('videoStatus').textContent = '';
+  try {
+    const data = await postYoutube(url, 'both');
+    setProgressUi('videoProgress', 'videoProgressBar', 'videoProgressText', 'videoProgressPct', false, 1, '');
+    showYoutubePlayer(data);
+    $('videoStatus').textContent = `Extracted ${data.frames_extracted} frame(s) from "${data.video}"`;
+    toast(`Extracted ${data.frames_extracted} frames`, 'success');
+    await loadGallery();
+  } catch (err) {
+    setProgressUi('videoProgress', 'videoProgressBar', 'videoProgressText', 'videoProgressPct', false, 0, '');
+    $('videoStatus').textContent = isCancelledError(err.message) ? 'Cancelled.' : 'Failed: ' + err.message;
+    toast(isCancelledError(err.message) ? 'Cancelled' : 'Extraction failed: ' + err.message,
+      isCancelledError(err.message) ? 'info' : 'error');
+  }
+}
+
 async function uploadVideo() {
   const fileInput = $('videoFileInput');
   const intervalInput = $('frameInterval');
@@ -847,6 +1151,7 @@ async function uploadVideo() {
     toast('Video extraction failed: ' + err.message, 'error');
   }
 }
+
 
 let webcamActive = false;
 function toggleWebcam() {
@@ -1412,7 +1717,7 @@ async function stopTraining() {
 
 function startSSE() {
   if (sseSource) { sseSource.close(); sseSource = null; }
-  sseSource = new EventSource(API + '/api/training/logs');
+  sseSource = new EventSource(getApiBase() + '/api/training/logs');
   sseSource.onmessage = (e) => { appendLog(e.data); };
   sseSource.onerror = () => {
     // SSE errors are common when training ends; don't spam
@@ -1570,9 +1875,316 @@ async function showMetricsChart(runName) {
 }
 
 // =========================================================
+// Progress bars & job polling
+// =========================================================
+function setProgressUi(wrapId, barId, textId, pctId, visible, progress, message, indeterminate) {
+  const wrap = $(wrapId);
+  if (!wrap) return;
+  wrap.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  const pct = Math.round(Math.max(0, Math.min(1, progress || 0)) * 100);
+  if (textId && $(textId)) $(textId).textContent = message || 'Processing…';
+  if (pctId && $(pctId)) $(pctId).textContent = indeterminate ? '…' : pct + '%';
+  const bar = barId ? $(barId) : null;
+  if (bar) {
+    bar.style.width = indeterminate ? '30%' : pct + '%';
+    bar.classList.toggle('animate-pulse', !!indeterminate);
+  }
+}
+
+const activeJobs = { infer: null, video: null };
+
+function setActiveJob(kind, jobId, cancelPath) {
+  activeJobs[kind] = { jobId, cancelPath };
+  const btn = $(kind === 'infer' ? 'inferCancelBtn' : 'videoCancelBtn');
+  if (btn) btn.classList.remove('hidden');
+}
+
+function clearActiveJob(kind) {
+  activeJobs[kind] = null;
+  const btn = $(kind === 'infer' ? 'inferCancelBtn' : 'videoCancelBtn');
+  if (btn) btn.classList.add('hidden');
+}
+
+async function cancelActiveJob(kind) {
+  const job = activeJobs[kind];
+  if (!job) return;
+  try {
+    const res = await apiFetch(job.cancelPath, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Cancel failed');
+    }
+    toast('Cancelling…', 'info');
+  } catch (e) {
+    toast('Cancel failed: ' + e.message, 'error');
+  }
+}
+
+function isCancelledError(msg) {
+  return msg === 'Cancelled' || msg === 'Cancelled by user' || /cancel/i.test(msg || '');
+}
+
+async function pollJob(statusUrl, onUpdate, jobKind) {
+  try {
+    while (true) {
+      const res = await apiFetch(statusUrl);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Job not found');
+      }
+      const data = await res.json();
+      if (onUpdate) onUpdate(data);
+      if (data.status === 'done') return data.result;
+      if (data.status === 'cancelled') throw new Error('Cancelled');
+      if (data.status === 'error') throw new Error(data.error || 'Processing failed');
+      await new Promise(r => setTimeout(r, 400));
+    }
+  } finally {
+    if (jobKind) clearActiveJob(jobKind);
+  }
+}
+
+// =========================================================
 // INFER
 // =========================================================
+
+let lastVideoDetectionReport = null;
+
+function renderClassTotalsList(container, totals, { clickable = false } = {}) {
+  const rows = totals || [];
+  container.innerHTML = '';
+  if (!rows.length) {
+    container.innerHTML = '<p class="text-gray-600 text-center py-2">No detections</p>';
+    return;
+  }
+  const maxCount = Math.max(...rows.map(r => r.count));
+  rows.forEach(row => {
+    const pct = maxCount ? Math.round((row.count / maxCount) * 100) : 0;
+    const el = document.createElement('div');
+    el.className = 'flex items-center gap-2 py-0.5' + (clickable ? ' cursor-pointer hover:bg-gray-800/50 rounded px-1 -mx-1' : '');
+    if (clickable) {
+      el.title = 'Show top detections for this class';
+      el.onclick = () => openVideoDetectionsModal();
+    }
+    el.innerHTML = `
+      <span class="w-24 truncate text-gray-300" title="${escapeHtml(row.class_name)}">${escapeHtml(row.class_name)}</span>
+      <div class="flex-1 bg-gray-800 rounded-full h-1.5 overflow-hidden min-w-[40px]">
+        <div class="bg-amber-500 h-1.5 rounded-full" style="width:${pct}%"></div>
+      </div>
+      <span class="w-12 text-right font-mono text-amber-300 shrink-0">${row.count.toLocaleString()}</span>
+    `;
+    container.appendChild(el);
+  });
+}
+
+function openVideoDetectionsModal() {
+  if (!lastVideoDetectionReport) {
+    toast('No detection data — run video inference first', 'warn');
+    return;
+  }
+  const r = lastVideoDetectionReport;
+  const byClass = r.top_detections_by_class || {};
+  const classNames = Object.keys(byClass);
+  const topPerClassCount = classNames.reduce((n, k) => n + (byClass[k]?.length || 0), 0);
+
+  const classTotals = r.class_totals || r.detection_summary || [];
+  $('videoDetectionsModalSubtitle').textContent =
+    `${r.total_detections.toLocaleString()} detections · ${(r.unique_objects ?? classTotals.reduce((s, x) => s + x.count, 0)).toLocaleString()} unique objects · ${r.frames_processed} frames`;
+
+  const summaryEl = $('videoDetectionsSummary');
+  summaryEl.innerHTML = '';
+  const summary = r.class_totals || r.detection_summary || [];
+  if (!summary.length) {
+    summaryEl.innerHTML = '<p class="text-xs text-gray-600">No detections above threshold.</p>';
+  } else {
+    const maxCount = Math.max(...summary.map(s => s.count));
+    summary.forEach(row => {
+      const pct = maxCount ? Math.round((row.count / maxCount) * 100) : 0;
+      const shown = (byClass[row.class_name] || []).length;
+      const el = document.createElement('div');
+      el.className = 'flex items-center gap-3 text-sm cursor-pointer hover:bg-gray-800/50 rounded px-1 -mx-1';
+      el.title = 'Show top detections for this class';
+      el.onclick = () => {
+        const sec = document.getElementById('classSection-' + cssEscape(row.class_name));
+        if (sec) { sec.open = true; sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+      };
+      el.innerHTML = `
+        <span class="w-28 truncate text-gray-300" title="${escapeHtml(row.class_name)}">${escapeHtml(row.class_name)}</span>
+        <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+          <div class="bg-green-500 h-2 rounded-full" style="width:${pct}%"></div>
+        </div>
+        <span class="w-16 text-right font-mono text-amber-300" title="Unique tracked objects">${row.count.toLocaleString()}</span>
+        <span class="w-14 text-right text-gray-600 text-xs">${shown} top</span>
+      `;
+      summaryEl.appendChild(el);
+    });
+  }
+
+  const container = $('videoDetectionsByClass');
+  container.innerHTML = '';
+  if (!classNames.length) {
+    container.innerHTML = '<p class="text-xs text-gray-600">No detections recorded.</p>';
+  } else {
+    summary.forEach(row => {
+      const tops = byClass[row.class_name] || [];
+      const details = document.createElement('details');
+      details.id = 'classSection-' + cssEscape(row.class_name);
+      details.className = 'rounded-lg border border-gray-800 bg-gray-800/30';
+      details.open = classNames.length <= 3;
+      details.innerHTML = `
+        <summary class="px-3 py-2 cursor-pointer text-sm text-gray-200 hover:bg-gray-800/50 rounded-lg">
+          <span class="font-medium text-indigo-300">${escapeHtml(row.class_name)}</span>
+          <span class="text-gray-500 ml-2">${row.count.toLocaleString()} unique</span>
+          <span class="text-gray-600 ml-1">· showing ${tops.length} top</span>
+        </summary>
+        <div class="overflow-x-auto max-h-56 overflow-y-auto border-t border-gray-800">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-gray-900 text-gray-500 sticky top-0">
+              <tr>
+                <th class="px-2 py-1.5">#</th>
+                <th class="px-2 py-1.5">Frame</th>
+                <th class="px-2 py-1.5">Conf</th>
+                <th class="px-2 py-1.5">BBox</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800"></tbody>
+          </table>
+        </div>
+      `;
+      const tbody = details.querySelector('tbody');
+      if (!tops.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="px-2 py-2 text-gray-600 text-center">—</td></tr>';
+      } else {
+        tops.forEach((d, i) => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-indigo-900/30 cursor-pointer detection-row';
+          tr.onclick = () => {
+            container.querySelectorAll('.detection-row.selected').forEach(el => el.classList.remove('selected', 'bg-indigo-900/60'));
+            tr.classList.add('selected', 'bg-indigo-900/60');
+            previewDetectionFrame(d);
+          };
+          const bbox = d.bbox ? d.bbox.map(v => Math.round(v)).join(', ') : '—';
+          tr.innerHTML = `
+            <td class="px-2 py-1 text-gray-500">${i + 1}</td>
+            <td class="px-2 py-1 font-mono text-indigo-300">${d.frame}</td>
+            <td class="px-2 py-1 font-mono text-green-400">${(d.confidence * 100).toFixed(1)}%</td>
+            <td class="px-2 py-1 font-mono text-gray-500 text-[10px]">[${bbox}]</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+      container.appendChild(details);
+    });
+  }
+
+  const vidUrl = r.result_video || `/api/infer/result/${encodeURIComponent(r.result_id)}.mp4`;
+  const modalVidDl = $('modalResultVideoDownload');
+  modalVidDl.href = vidUrl;
+  modalVidDl.download = `infer_${r.result_id}.mp4`;
+
+  resetFramePreview();
+  $('videoDetectionsModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+let lastPreviewDetection = null;
+
+function cssEscape(s) {
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function frameImageUrl(resultId, frameIndex, bbox, { cacheBust = true } = {}) {
+  let url = `${getApiBase()}/api/infer/result/${encodeURIComponent(resultId)}/frame/${frameIndex}`;
+  if (bbox?.length === 4) {
+    const [x1, y1, x2, y2] = bbox;
+    url += `?x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}`;
+  }
+  if (cacheBust) url += (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+  return url;
+}
+
+function resetFramePreview() {
+  lastPreviewDetection = null;
+  $('framePreviewImg').classList.add('hidden');
+  $('framePreviewPlaceholder').classList.remove('hidden');
+  $('framePreviewMeta').textContent = '';
+  $('framePreviewSeekBtn').classList.add('hidden');
+  $('framePreviewDownload').classList.add('hidden');
+  $('framePreviewImg').removeAttribute('src');
+}
+
+function previewDetectionFrame(d) {
+  const r = lastVideoDetectionReport;
+  if (!r?.result_id) return;
+  lastPreviewDetection = d;
+  const url = frameImageUrl(r.result_id, d.frame, d.bbox);
+  $('framePreviewImg').src = url;
+  $('framePreviewImg').classList.remove('hidden');
+  $('framePreviewPlaceholder').classList.add('hidden');
+  $('framePreviewMeta').textContent =
+    `${d.class_name} · frame ${d.frame} · ${(d.confidence * 100).toFixed(1)}% confidence`;
+  $('framePreviewSeekBtn').classList.remove('hidden');
+  const frameDl = $('framePreviewDownload');
+  frameDl.href = frameImageUrl(r.result_id, d.frame, d.bbox, { cacheBust: false });
+  frameDl.download = `infer_${r.result_id}_frame${String(d.frame).padStart(6, '0')}.jpg`;
+  frameDl.classList.remove('hidden');
+}
+
+function setupInferVideoFrameBadge(vid, fps, totalFrames) {
+  const badge = $('inferVideoFrameBadge');
+  if (!badge || !vid) return;
+  const rate = fps > 0 ? fps : 25;
+  const maxFrame = totalFrames > 0 ? totalFrames - 1 : null;
+  const update = () => {
+    let f = Math.round(vid.currentTime * rate);
+    if (maxFrame != null) f = Math.min(maxFrame, Math.max(0, f));
+    badge.textContent = maxFrame != null ? `Frame ${f} / ${maxFrame}` : `Frame ${f}`;
+    badge.classList.remove('hidden');
+  };
+  if (vid._frameBadgeUpdate) {
+    vid.removeEventListener('timeupdate', vid._frameBadgeUpdate);
+    vid.removeEventListener('seeked', vid._frameBadgeUpdate);
+    vid.removeEventListener('loadedmetadata', vid._frameBadgeUpdate);
+  }
+  vid._frameBadgeUpdate = update;
+  vid.addEventListener('timeupdate', update);
+  vid.addEventListener('seeked', update);
+  vid.addEventListener('loadedmetadata', update);
+  update();
+}
+
+function seekResultVideoToPreview() {
+  if (!lastPreviewDetection || !lastVideoDetectionReport) return;
+  const vid = $('inferResultVideo');
+  if (!vid?.src) { toast('Result video not available', 'warn'); return; }
+  const fps = lastVideoDetectionReport.fps || 25;
+  vid.currentTime = lastPreviewDetection.frame / fps;
+  vid.play().catch(() => {});
+  closeVideoDetectionsModal();
+  showTab('infer');
+  vid.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+
+function closeVideoDetectionsModal() {
+  resetFramePreview();
+  $('videoDetectionsModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('videoDetectionsModal').classList.contains('hidden')) {
+    closeVideoDetectionsModal();
+  }
+});
+
 let inferSourceFile = null;
+let inferSourceServerVideo = null;
 
 async function loadInferModels() {
   try {
@@ -1613,15 +2225,43 @@ function handleInferModelDrop(e) {
   uploadInferModel(e.dataTransfer.files);
 }
 
+function setInferVideoOptionsVisible(isVideo) {
+  $('inferMaxFramesWrap').style.display = isVideo ? '' : 'none';
+  $('inferVideoOverlayWrap').classList.toggle('hidden', !isVideo);
+}
+
 function selectInferSource(files) {
   if (!files || !files.length) return;
+  inferSourceServerVideo = null;
+  $('inferSourceVideoWrap').classList.add('hidden');
   inferSourceFile = files[0];
   $('inferSourceName').textContent = inferSourceFile.name;
   $('inferSourceSize').textContent = (inferSourceFile.size / 1024 / 1024).toFixed(2) + ' MB';
   $('inferSourcePreview').classList.remove('hidden');
-  // Show/hide max frames option
-  const isVideo = /\.(mp4|avi|mov|mkv|webm|flv)$/i.test(inferSourceFile.name);
-  $('inferMaxFramesWrap').style.display = isVideo ? '' : 'none';
+  setInferVideoOptionsVisible(/\.(mp4|avi|mov|mkv|webm|flv)$/i.test(inferSourceFile.name));
+}
+
+async function loadInferYoutube() {
+  const url = $('inferYoutubeUrl').value.trim();
+  if (!url) { toast('Paste a YouTube URL first', 'warn'); return; }
+  setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', true, 0, 'Downloading video…', true);
+  try {
+    const data = await postYoutube(url, 'watch', 'infer');
+    setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', false, 0, '');
+    inferSourceFile = null;
+    $('inferSourceInput').value = '';
+    inferSourceServerVideo = { filename: data.filename, title: data.video };
+    $('inferSourceName').textContent = data.video + ' (YouTube)';
+    $('inferSourceSize').textContent = data.filename;
+    $('inferSourcePreview').classList.remove('hidden');
+    $('inferSourceVideo').src = data.play_url + '?t=' + Date.now();
+    $('inferSourceVideoWrap').classList.remove('hidden');
+    setInferVideoOptionsVisible(true);
+    toast('Video loaded — run inference to process and watch result', 'success');
+  } catch (err) {
+    setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', false, 0, '');
+    if (!isCancelledError(err.message)) toast('Failed to load YouTube video: ' + err.message, 'error');
+  }
 }
 
 function handleInferSourceDrop(e) {
@@ -1632,63 +2272,88 @@ function handleInferSourceDrop(e) {
 
 function clearInferSource() {
   inferSourceFile = null;
+  inferSourceServerVideo = null;
   $('inferSourcePreview').classList.add('hidden');
+  $('inferSourceVideoWrap').classList.add('hidden');
+  $('inferSourceVideo').removeAttribute('src');
   $('inferSourceInput').value = '';
+  $('inferYoutubeUrl').value = '';
+  setInferVideoOptionsVisible(false);
 }
 
 async function runInference() {
   const modelFilename = $('inferModelSelect').value;
   if (!modelFilename) { toast('Select a model first', 'warn'); return; }
-  if (!inferSourceFile) { toast('Select a source image or video first', 'warn'); return; }
+  if (!inferSourceFile && !inferSourceServerVideo) {
+    toast('Select a source or load a YouTube video first', 'warn');
+    return;
+  }
 
   const conf = parseFloat($('inferConf').value) || 0.25;
   const iou = parseFloat($('inferIou').value) || 0.45;
   const task = $('inferTask').value;
   const maxFrames = parseInt($('inferMaxFrames').value) || 0;
-  const isVideo = /\.(mp4|avi|mov|mkv|webm|flv)$/i.test(inferSourceFile.name);
+  const isVideo = inferSourceServerVideo
+    || /\.(mp4|avi|mov|mkv|webm|flv)$/i.test(inferSourceFile?.name || '');
 
   const btn = $('inferRunBtn');
   btn.disabled = true;
-  $('inferProgress').classList.remove('hidden');
-  $('inferProgressText').textContent = isVideo ? 'Processing video (may take a while)…' : 'Running inference…';
+  setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', true,
+    0, isVideo ? 'Starting video processing…' : 'Running inference…', !isVideo);
   $('inferResultPlaceholder').classList.remove('hidden');
   $('inferImageResult').classList.add('hidden');
   $('inferVideoResult').classList.add('hidden');
   $('inferDetectionsCard').classList.add('hidden');
   $('inferVideoStats').classList.add('hidden');
   $('inferDownloadLink').classList.add('hidden');
+  lastVideoDetectionReport = null;
 
   const fd = new FormData();
-  fd.append('file', inferSourceFile);
+  if (inferSourceServerVideo) {
+    fd.append('source_filename', inferSourceServerVideo.filename);
+  } else {
+    fd.append('file', inferSourceFile);
+  }
   fd.append('model_filename', modelFilename);
   fd.append('conf', conf);
   fd.append('iou', iou);
   fd.append('task', task);
-  if (isVideo) fd.append('max_frames', maxFrames);
+  if (isVideo) {
+    fd.append('max_frames', maxFrames);
+    if ($('inferShowSpeed').checked) fd.append('show_speed', '1');
+    if ($('inferShowClassCount').checked) fd.append('show_class_overlay', '1');
+    if ($('inferShowClassTotal').checked) fd.append('show_class_total', '1');
+  }
 
   try {
-    const endpoint = isVideo ? '/api/infer/video' : '/api/infer/image';
-    const res = await apiFetch(endpoint, { method: 'POST', body: fd });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Inference failed');
+    let data;
+    if (isVideo) {
+      const res = await apiFetch('/api/infer/video', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Inference failed');
+      }
+      const { job_id } = await res.json();
+      setActiveJob('infer', job_id, `/api/infer/video/cancel/${job_id}`);
+      data = await pollJob(`/api/infer/video/status/${job_id}`, (job) => {
+        setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', true,
+          job.progress, job.message || `Frame ${job.current_frame || 0}${job.total_frames ? ' / ' + job.total_frames : '…'}`,
+          job.status === 'queued');
+      }, 'infer');
+    } else {
+      const res = await apiFetch('/api/infer/image', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Inference failed');
+      }
+      data = await res.json();
+      setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', true, 1, 'Complete', false);
     }
-    const data = await res.json();
 
     $('inferResultPlaceholder').classList.add('hidden');
 
     if (isVideo) {
-      const vid = $('inferResultVideo');
-      vid.src = data.result_video + '?t=' + Date.now();
-      $('inferVideoResult').classList.remove('hidden');
-      $('inferStatFrames').textContent = data.frames_processed;
-      $('inferStatDetections').textContent = data.total_detections;
-      $('inferStatSize').textContent = data.size_mb;
-      $('inferVideoStats').classList.remove('hidden');
-      const dl = $('inferDownloadLink');
-      dl.href = data.result_video;
-      dl.download = 'infer_' + data.result_id + '.mp4';
-      dl.classList.remove('hidden');
+      showInferVideoResult(data.result_id, data);
     } else {
       const img = $('inferResultImg');
       img.src = data.result_image + '?t=' + Date.now();
@@ -1724,11 +2389,139 @@ async function runInference() {
     toast('Inference complete!', 'success');
     loadInferResults();
   } catch (e) {
-    toast('Inference error: ' + e.message, 'error');
+    if (isCancelledError(e.message)) {
+      toast('Inference cancelled', 'info');
+    } else {
+      toast('Inference error: ' + e.message, 'error');
+    }
     $('inferResultPlaceholder').classList.remove('hidden');
   } finally {
     btn.disabled = false;
-    $('inferProgress').classList.add('hidden');
+    setProgressUi('inferProgress', 'inferProgressBar', 'inferProgressText', 'inferProgressPct', false, 0, '');
+  }
+}
+
+function applyVideoDetectionReport(data) {
+  lastVideoDetectionReport = {
+    result_id: data.result_id,
+    result_video: data.result_video || `/api/infer/result/${data.result_id}.mp4`,
+    fps: data.fps || 25,
+    total_detections: data.total_detections,
+    frames_processed: data.frames_processed,
+    detection_summary: data.detection_summary || [],
+    class_totals: data.class_totals || [],
+    unique_objects: data.unique_objects,
+    top_detections_by_class: data.top_detections_by_class || {},
+    size_mb: data.size_mb,
+  };
+  $('inferStatFrames').textContent = data.frames_processed;
+  $('inferStatDetections').textContent = data.total_detections;
+  $('inferStatSize').textContent = data.size_mb;
+  const sp = $('inferStatSpeed');
+  const ss = data.speed_summary;
+  if (ss && ss.avg_speed_px_s > 0) {
+    sp.textContent = `Avg speed: ${ss.avg_speed_px_s} px/s · max ${ss.max_speed_px_s} px/s · ${ss.tracked_objects} tracks`;
+    sp.classList.remove('hidden');
+  } else {
+    sp.classList.add('hidden');
+    sp.textContent = '';
+  }
+  const totals = data.class_totals || data.detection_summary || [];
+  const totalsWrap = $('inferClassTotalsWrap');
+  if (totals.length) {
+    renderClassTotalsList($('inferClassTotalsList'), totals, { clickable: true });
+    totalsWrap.classList.remove('hidden');
+  } else {
+    totalsWrap.classList.add('hidden');
+  }
+  $('inferVideoStats').classList.remove('hidden');
+}
+
+function setupInferVideoPlayer(resultId, fps, totalFrames) {
+  const vid = $('inferResultVideo');
+  const errEl = $('inferVideoError');
+  setupInferVideoFrameBadge(vid, fps || 25, totalFrames || 0);
+  let retried = false;
+  vid.onerror = async () => {
+    if (retried) {
+      errEl.textContent = 'Playback failed. Try Download or re-run inference.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    retried = true;
+    errEl.textContent = 'Converting video for browser playback…';
+    errEl.classList.remove('hidden');
+    try {
+      await apiFetch(`/api/infer/results/${encodeURIComponent(resultId)}/transcode`, { method: 'POST' });
+      vid.src = `/api/infer/result/${encodeURIComponent(resultId)}.mp4?t=${Date.now()}`;
+      vid.load();
+    } catch {
+      errEl.textContent = 'Playback failed. Try Download.';
+    }
+  };
+  vid.onloadeddata = () => errEl.classList.add('hidden');
+}
+
+function showInferVideoResult(resultId, reportData) {
+  $('inferResultPlaceholder').classList.add('hidden');
+  $('inferImageResult').classList.add('hidden');
+  $('inferDetectionsCard').classList.add('hidden');
+  $('inferVideoResult').classList.remove('hidden');
+
+  const vid = $('inferResultVideo');
+  const fps = reportData?.fps || lastVideoDetectionReport?.fps || 25;
+  const frames = reportData?.frames_processed || lastVideoDetectionReport?.frames_processed || 0;
+  setupInferVideoPlayer(resultId, fps, frames);
+  vid.src = `/api/infer/result/${encodeURIComponent(resultId)}.mp4?t=${Date.now()}`;
+  vid.load();
+
+  const dl = $('inferDownloadLink');
+  dl.href = `/api/infer/result/${encodeURIComponent(resultId)}.mp4`;
+  dl.download = `infer_${resultId}.mp4`;
+  dl.classList.remove('hidden');
+
+  if (reportData) {
+    applyVideoDetectionReport(reportData);
+  } else {
+    $('inferVideoStats').classList.add('hidden');
+    lastVideoDetectionReport = null;
+  }
+}
+
+async function viewPastInferResult(resultId, type, hasReport) {
+  if (type === 'video') {
+    let report = null;
+    if (hasReport) {
+      try {
+        const res = await apiFetch(`/api/infer/result/${encodeURIComponent(resultId)}/report`);
+        if (res.ok) report = await res.json();
+        else toast('No saved stats for this result', 'warn');
+      } catch {
+        toast('Could not load stats', 'error');
+      }
+    } else {
+      toast('No stats saved for this run — video only', 'info');
+    }
+    showInferVideoResult(resultId, report);
+    $('inferVideoResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } else {
+    $('inferVideoResult').classList.add('hidden');
+    $('inferVideoStats').classList.add('hidden');
+    $('inferDetectionsCard').classList.add('hidden');
+    $('inferResultPlaceholder').classList.add('hidden');
+    $('inferImageResult').classList.remove('hidden');
+    $('inferResultImg').src = `/api/infer/result/${encodeURIComponent(resultId)}.jpg?t=${Date.now()}`;
+  }
+}
+
+async function openPastVideoStats(resultId) {
+  try {
+    const res = await apiFetch(`/api/infer/result/${encodeURIComponent(resultId)}/report`);
+    if (!res.ok) { toast('No stats for this result', 'warn'); return; }
+    applyVideoDetectionReport(await res.json());
+    openVideoDetectionsModal();
+  } catch (e) {
+    toast('Could not load stats: ' + e.message, 'error');
   }
 }
 
@@ -1744,17 +2537,26 @@ async function loadInferResults() {
     container.innerHTML = '';
     data.results.forEach(r => {
       const el = document.createElement('div');
-      el.className = 'flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2';
+      el.className = 'flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 flex-wrap';
+      const rid = r.result_id || r.filename.replace(/\.[^.]+$/, '');
       const icon = r.type === 'video'
         ? '<svg class="w-4 h-4 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/></svg>'
         : '<svg class="w-4 h-4 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>';
+      const actions = r.type === 'video'
+        ? `<button type="button" onclick="viewPastInferResult('${rid}', 'video', ${!!r.has_report})"
+            class="text-xs text-indigo-400 hover:text-indigo-300 shrink-0">Play</button>
+           ${r.has_report ? `<button type="button" onclick="openPastVideoStats('${rid}')"
+            class="text-xs text-green-400 hover:text-green-300 shrink-0">Stats</button>` : ''}`
+        : `<button type="button" onclick="viewPastInferResult('${rid}', 'image', false)"
+            class="text-xs text-indigo-400 hover:text-indigo-300 shrink-0">View</button>`;
       el.innerHTML = `
         ${icon}
-        <span class="text-xs text-gray-300 truncate flex-1">${r.filename}</span>
+        <span class="text-xs text-gray-300 truncate flex-1 min-w-[80px]">${r.filename}</span>
         <span class="text-xs text-gray-500 shrink-0">${r.size_mb} MB</span>
+        ${actions}
         <a href="${r.url}" download="${r.filename}"
           class="text-xs text-indigo-400 hover:text-indigo-300 shrink-0">↓</a>
-        <button onclick="deleteInferResult('${r.filename}', this.closest('div'))"
+        <button type="button" onclick="deleteInferResult('${r.filename}', this.closest('div'))"
           class="text-xs text-gray-600 hover:text-red-400 shrink-0">✕</button>
       `;
       container.appendChild(el);
@@ -1775,6 +2577,7 @@ async function deleteInferResult(filename, el) {
 // INIT
 // =========================================================
 (function init() {
+  maybeShowApiSettings();
   checkHealth();
   setInterval(checkHealth, 30000);
   loadGallery();

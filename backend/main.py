@@ -48,6 +48,16 @@ async def serve_frontend():
     return FileResponse(str(index))
 
 
+@app.get("/config.js", include_in_schema=False)
+async def serve_frontend_config():
+    """API base URL for UI (empty = same origin)."""
+    path = FRONTEND_DIR / "config.js"
+    if not path.exists():
+        from fastapi.responses import Response
+        return Response("window.YOLOlIZER_API = '';", media_type="application/javascript")
+    return FileResponse(str(path), media_type="application/javascript")
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "YOLOlizer"}

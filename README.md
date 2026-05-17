@@ -1,24 +1,21 @@
 # YOLOlizer
 
-A local web service for training and running YOLO models — upload images, annotate bounding boxes/polygons, train, and run inference on images or video. No cloud dependencies.
+A local web service for training and running YOLO models — upload images or video, annotate bounding boxes/polygons, train, and run inference. No cloud required for the API; optional static UI on GitHub Pages.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/mikzielinski/yololizer)
+
+**Live UI (GitHub Pages):** [https://mikzielinski.github.io/yololizer/](https://mikzielinski.github.io/yololizer/) — connect to a local Docker API (see below).
 
 ---
 
 ## Run options
 
-### Option 1 — GitHub Codespaces (no install)
+### Option 1 — GitHub Pages UI + local API (recommended for sharing the interface)
 
-Click the badge above, or on the GitHub repo page go to **Code → Codespaces → Create codespace**.
+The frontend is deployed automatically to GitHub Pages on every push to `main`. The **API must run on your machine** (Docker or Python); Pages only hosts the HTML/JS.
 
-The environment installs all dependencies automatically and starts the server. When the port-forwarding notification appears, click **Open in Browser** — YOLOlizer is ready.
-
-> Note: Codespaces machines don't have a GPU by default, so training runs on CPU. For GPU training, use the Docker or local Python setup on a machine with a CUDA GPU.
-
----
-
-### Option 2 — Docker (recommended for local use)
+1. **Enable Pages** (once): repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. **Run the API locally:**
 
 ```bash
 git clone https://github.com/mikzielinski/yololizer.git
@@ -26,16 +23,42 @@ cd yololizer
 docker compose up --build
 ```
 
-Open [http://localhost:8000](http://localhost:8000).
+3. Open [https://mikzielinski.github.io/yololizer/](https://mikzielinski.github.io/yololizer/).
+4. In the header, set **API** to `http://127.0.0.1:8001` (default in `docs/config.js`) and click **Connect**.
 
-Your annotations, uploads, and trained models are persisted in `./data/` and `./runs/` on the host — they survive container restarts.
+> CORS is enabled on the API (`allow_origins=*`), so the Pages UI can talk to `localhost`.
 
-**GPU acceleration** (NVIDIA, requires [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)):
-Uncomment the `deploy.resources` block in `docker-compose.yml`, then re-run `docker compose up`.
+**Same machine, no Pages:** open [http://localhost:8001](http://localhost:8001) after `docker compose up` (port **8001** on the host maps to 8000 in the container).
 
 ---
 
-### Option 3 — Local Python
+### Option 2 — GitHub Codespaces (no local install)
+
+Click the badge above, or **Code → Codespaces → Create codespace**.
+
+Dependencies install automatically and the server starts. Open the forwarded port when prompted.
+
+> Codespaces has no GPU by default (CPU training). No webcam in cloud environments.
+
+---
+
+### Option 3 — Docker (full stack local)
+
+```bash
+git clone https://github.com/mikzielinski/yololizer.git
+cd yololizer
+docker compose up --build
+```
+
+Open [http://localhost:8001](http://localhost:8001).
+
+Data in `./data/` and `./runs/` persists across restarts.
+
+**GPU (NVIDIA):** install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), uncomment `deploy.resources` in `docker-compose.yml`, then `docker compose up` again.
+
+---
+
+### Option 4 — Local Python
 
 ```bash
 git clone https://github.com/mikzielinski/yololizer.git
@@ -51,12 +74,12 @@ Open [http://localhost:8000](http://localhost:8000).
 ## Features
 
 | Tab | What it does |
-|-----|-------------|
-| **Data Sources** | Upload images, extract frames from video, capture from webcam |
-| **Annotate** | Draw bounding boxes or polygons, assign class labels, auto-save in YOLO format |
-| **Train** | Pick task (detect / segment / classify / pose), model size, epochs, batch, LR; stream real-time logs and live metrics |
-| **Models** | List training runs, download `best.pt`, view mAP chart |
-| **Infer** | Upload any `.pt` model, run it on an image or video, download the annotated result |
+|-----|----------------|
+| **Data Sources** | Upload images/video, YouTube download, frame extraction, webcam capture |
+| **Annotate** | Bounding boxes or polygons, class labels, auto-save YOLO `.txt` |
+| **Train** | detect / segment / classify / pose; live logs and metrics |
+| **Models** | List runs, download `best.pt`, mAP chart |
+| **Infer** | Custom `.pt`, image or video inference, progress/cancel, nested bbox overlays, optional speed & class counters, detection modal with frame preview & download |
 
 ---
 
@@ -64,39 +87,59 @@ Open [http://localhost:8000](http://localhost:8000).
 
 ```
 yololizer/
-  .devcontainer/
-    devcontainer.json   # GitHub Codespaces config
+  .github/workflows/pages.yml   # Deploy UI to GitHub Pages
+  .devcontainer/                # Codespaces
   backend/
-    main.py             # FastAPI application
-    config.py           # Paths and constants
-    routers/
-      sources.py        # Image / video / webcam endpoints
-      labels.py         # Annotation CRUD
-      training.py       # Training control + SSE log stream
-      models.py         # Model listing and download
-      inference.py      # Run .pt model on image or video
+    main.py                     # FastAPI + CORS + static frontend
+    infer_jobs.py               # Video inference jobs
+    infer_tracking.py           # Object tracking / speed
+    infer_overlay.py            # On-video HUD
+    infer_box_draw.py             # Nested detection boxes
+    routers/                    # API routes
   frontend/
-    index.html          # Single-page application (no build step)
-  data/                 # Created automatically
-    uploads/            # Uploaded images and extracted frames
-    labels/             # YOLO .txt label files
-    dataset/            # Prepared train/val split
-    inference/          # Uploaded models and result files
-  runs/                 # YOLO training outputs (best.pt, results.csv, …)
+    index.html                  # Single-page app
+    config.js                   # API base (empty = same origin)
+  docs/                         # GitHub Pages output (index built in CI)
+  scripts/build-pages.sh
+  data/                         # Created at runtime (gitignored)
+  runs/                         # Training outputs (gitignored)
   Dockerfile
   docker-compose.yml
   requirements.txt
   run.py
 ```
 
+---
+
+## GitHub Pages (maintainers)
+
+- Workflow: `.github/workflows/pages.yml` runs on push to `main` / `master`.
+- Build: `scripts/build-pages.sh` copies `frontend/index.html` → `docs/index.html`.
+- Configure repo **Settings → Pages → Source: GitHub Actions**.
+- After merge to `main`, the site is at `https://<user>.github.io/yololizer/`.
+
+To preview Pages locally:
+
+```bash
+bash scripts/build-pages.sh
+python -m http.server 8080 --directory docs
+# open http://localhost:8080
+```
+
+---
+
 ## Label format
 
-Standard YOLO `.txt` (one file per image, same stem):
-- Bounding box: `<class_id> <cx> <cy> <w> <h>` (normalized 0–1)
-- Segmentation polygon: `<class_id> <x1> <y1> <x2> <y2> …` (normalized 0–1)
+YOLO `.txt` per image (same stem):
+
+- Box: `class_id cx cy w h` (normalized 0–1)
+- Polygon: `class_id x1 y1 x2 y2 …` (normalized 0–1)
+
+---
 
 ## Notes
 
-- Webcam support requires a physical camera at index 0 and is not available inside Docker or Codespaces.
-- Training runs in a background thread; the API stays responsive during training.
-- The SSE log stream sends keepalive comments every 15 seconds to prevent proxy timeouts.
+- Webcam needs a local camera; not available in Docker without device passthrough or in Codespaces.
+- Training runs in a background thread; API stays responsive.
+- SSE log stream uses 15s keepalive comments for proxies.
+- Video results are transcoded to H.264 for browser playback (`ffmpeg` in Docker image).
