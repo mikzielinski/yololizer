@@ -127,9 +127,13 @@ OPERATION_DOCS: dict[tuple[str, str], dict] = {
         "summary": "Cancel YouTube job",
         "description": "Best-effort cancel for queued/running download.",
     },
+    ("post", "/api/sources/videos/upload"): {
+        "summary": "Upload video to library",
+        "description": "Save a video file to the media library (`data/uploads/videos/`) without frame extraction.",
+    },
     ("get", "/api/sources/videos"): {
         "summary": "List video library",
-        "description": "Saved recordings in `data/uploads/videos/` (YouTube downloads).",
+        "description": "Saved recordings in `data/uploads/videos/` (YouTube downloads and uploads).",
     },
     ("delete", "/api/sources/videos/{filename}"): {
         "summary": "Delete recording",

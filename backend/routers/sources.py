@@ -291,6 +291,39 @@ async def youtube_cancel_job(job_id: str):
     return {"status": "cancel_requested", "job_id": job_id}
 
 
+@router.post("/videos/upload")
+async def upload_video_to_library(file: UploadFile = File(...)):
+    """Save an uploaded video file to the media library (no frame extraction)."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Empty filename")
+    if not _is_video(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not an allowed video type. Allowed: {ALLOWED_VIDEO_EXTENSIONS}",
+        )
+
+    safe_name = Path(file.filename).name
+    dest = VIDEOS_DIR / safe_name
+    if dest.exists():
+        stem, suffix = dest.stem, dest.suffix
+        dest = VIDEOS_DIR / f"{stem}_{int(time.time())}{suffix}"
+
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        content = await file.read()
+        async with aiofiles.open(dest, "wb") as f:
+            await f.write(content)
+    except Exception as e:
+        logger.exception("Failed to save video %s", safe_name)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    return {
+        "filename": dest.name,
+        "size_mb": round(dest.stat().st_size / 1024 / 1024, 2),
+        "play_url": f"/api/sources/video/{dest.name}",
+    }
+
+
 @router.get("/videos")
 async def list_videos():
     """List downloaded videos available for playback and inference."""

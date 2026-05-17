@@ -807,15 +807,64 @@
     </div><!-- /tab-infer -->
 
     <div id="tab-parcel" class="hidden flex-col flex-1 overflow-y-auto p-6 gap-6">
-      <div>
-        <h2 class="text-xl font-semibold text-white">Parcel capture</h2>
-        <p class="text-sm text-gray-500 mt-1">Button time on film → travel offset → extract window → top object clusters.</p>
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-white">Parcel</h2>
+          <p class="text-sm text-gray-500 mt-1">Capture analysis and media library for conveyor videos.</p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button type="button" id="parcelSubCapture" onclick="showParcelSubTab('capture')"
+            class="px-4 py-2 text-sm rounded-lg border border-indigo-500 bg-indigo-600 text-white">Capture</button>
+          <button type="button" id="parcelSubLibrary" onclick="showParcelSubTab('library')"
+            class="px-4 py-2 text-sm rounded-lg border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700">Library</button>
+        </div>
       </div>
+
+      <div id="parcel-panel-library" class="hidden flex-col gap-6 max-w-4xl">
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <h3 class="font-medium text-gray-200">Add media</h3>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Upload video file</label>
+            <input id="parcelLibraryFileInput" type="file" accept="video/*" class="text-xs text-gray-400 w-full file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-indigo-700 file:text-white" onchange="uploadParcelLibraryVideo(this.files)" />
+          </div>
+          <div class="border-t border-gray-800 pt-4">
+            <label class="text-xs text-gray-400 block mb-1">Or download from YouTube</label>
+            <div class="flex gap-2 flex-wrap">
+              <input id="parcelLibraryYoutubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=…"
+                class="flex-1 min-w-[200px] bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+              <button type="button" onclick="downloadParcelLibraryYoutube()"
+                class="px-4 py-2 text-sm rounded-lg bg-red-700 hover:bg-red-600 text-white shrink-0">Download</button>
+            </div>
+          </div>
+          <div id="parcelLibraryUploadStatus" class="text-xs text-gray-500"></div>
+        </div>
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+          <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <h3 class="font-medium text-gray-200">Media library</h3>
+            <div class="flex items-center gap-3 flex-wrap">
+              <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                <input id="parcelLibraryDeleteFrames" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-indigo-600" />
+                Also delete extracted frames
+              </label>
+              <button type="button" onclick="loadParcelMediaLibrary()" class="text-xs text-indigo-400 hover:text-indigo-300">Refresh</button>
+            </div>
+          </div>
+          <div id="parcelMediaLibraryList" class="space-y-2 max-h-[60vh] overflow-y-auto">
+            <p class="text-xs text-gray-600 py-2">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="parcel-panel-capture" class="flex flex-col gap-6">
+      <p class="text-sm text-gray-500">Button time on film → travel offset → extract window → top object clusters.</p>
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
           <h3 class="font-medium text-gray-200">Parameters</h3>
           <div>
-            <label class="text-xs text-gray-400 block mb-1">Video</label>
+            <div class="flex items-center justify-between mb-1">
+            <label class="text-xs text-gray-400">Video</label>
+            <button type="button" onclick="showParcelSubTab('library')" class="text-xs text-indigo-400 hover:text-indigo-300">Library →</button>
+          </div>
             <select id="parcelVideoSelect" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" onchange="parcelVideoSelected()"></select>
             <input id="parcelResultVideoId" type="text" placeholder="Infer result_id (optional)" class="mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
             <input id="parcelVideoFile" type="file" accept="video/*" class="mt-2 text-xs text-gray-400 w-full" onchange="parcelVideoFileSelected(this.files)" />
@@ -880,6 +929,7 @@
           </div>
           <div id="parcelClustersList" class="space-y-3"></div>
         </div>
+      </div>
       </div>
     </div>
 
@@ -1123,6 +1173,8 @@ function showTab(name) {
   } else if (name === 'parcel') {
     loadParcelVideos();
     loadParcelModels();
+    const sub = sessionStorage.getItem('parcelSubTab') || 'capture';
+    showParcelSubTab(sub);
   }
 }
 
@@ -1195,14 +1247,27 @@ function formatVideoLibraryDate(ts) {
 }
 
 async function loadVideoLibrary() {
-  const list = $('videoLibraryList');
+  return loadMediaLibrary({
+    listId: 'videoLibraryList',
+    emptyMessage: 'No saved recordings yet. Download a YouTube video above.',
+    deleteFramesCheckboxId: 'videoLibraryDeleteFrames',
+  });
+}
+
+async function loadMediaLibrary(opts) {
+  const listId = opts.listId || 'videoLibraryList';
+  const list = $(listId);
   if (!list) return;
+  const emptyMsg = opts.emptyMessage || 'No saved recordings yet.';
+  const deleteFramesId = opts.deleteFramesCheckboxId || 'videoLibraryDeleteFrames';
+  const showUseInCapture = !!opts.showUseInCapture;
+
   try {
     const res = await apiFetch('/api/sources/videos');
     const data = await res.json();
     const videos = data.videos || [];
     if (!videos.length) {
-      list.innerHTML = '<p class="text-xs text-gray-600 py-2">No saved recordings yet. Download a YouTube video above.</p>';
+      list.innerHTML = `<p class="text-xs text-gray-600 py-2">${escapeHtml(emptyMsg)}</p>`;
       return;
     }
     list.innerHTML = '';
@@ -1212,18 +1277,22 @@ async function loadVideoLibrary() {
       row.dataset.filename = v.filename;
       const playUrl = getApiBase() + v.play_url;
       const dateStr = formatVideoLibraryDate(v.modified_at);
+      const useBtn = showUseInCapture
+        ? '<button type="button" data-action="use" class="text-xs text-emerald-400 hover:text-emerald-300 shrink-0">Use in capture</button>'
+        : '';
       row.innerHTML = `
-        <div class="flex items-start gap-2">
+        <div class="flex items-start gap-2 flex-wrap">
           <div class="min-w-0 flex-1">
             <p class="text-sm text-gray-200 truncate" title="${escapeHtml(v.filename)}">${escapeHtml(v.filename)}</p>
             <p class="text-xs text-gray-500">${v.size_mb ?? '?'} MB · ${dateStr}</p>
           </div>
+          ${useBtn}
           <button type="button" data-action="play" class="text-xs text-indigo-400 hover:text-indigo-300 shrink-0">Play</button>
           <button type="button" data-action="delete" class="text-xs text-red-400 hover:text-red-300 shrink-0">Delete</button>
         </div>
         <video class="hidden w-full rounded border border-gray-700 max-h-40 bg-black" controls preload="metadata"></video>
       `;
-      row.querySelector('[data-action="play"]').addEventListener('click', () => {
+      row.querySelector('[data-action="play"]')?.addEventListener('click', () => {
         const vid = row.querySelector('video');
         if (vid.classList.contains('hidden')) {
           vid.src = playUrl + '?t=' + Date.now();
@@ -1234,7 +1303,9 @@ async function loadVideoLibrary() {
           vid.removeAttribute('src');
         }
       });
-      row.querySelector('[data-action="delete"]').addEventListener('click', () => deleteLibraryVideo(v.filename, row));
+      row.querySelector('[data-action="delete"]')?.addEventListener('click', () =>
+        deleteLibraryVideo(v.filename, row, { listId, deleteFramesCheckboxId: deleteFramesId }));
+      row.querySelector('[data-action="use"]')?.addEventListener('click', () => useParcelLibraryVideo(v.filename));
       list.appendChild(row);
     });
   } catch (e) {
@@ -1242,8 +1313,19 @@ async function loadVideoLibrary() {
   }
 }
 
-async function deleteLibraryVideo(filename, rowEl) {
-  const alsoFrames = $('videoLibraryDeleteFrames')?.checked;
+async function loadParcelMediaLibrary() {
+  return loadMediaLibrary({
+    listId: 'parcelMediaLibraryList',
+    emptyMessage: 'No media yet — upload a file or download from YouTube.',
+    deleteFramesCheckboxId: 'parcelLibraryDeleteFrames',
+    showUseInCapture: true,
+  });
+}
+
+async function deleteLibraryVideo(filename, rowEl, opts = {}) {
+  const deleteFramesId = opts.deleteFramesCheckboxId || 'videoLibraryDeleteFrames';
+  const listId = opts.listId || 'videoLibraryList';
+  const alsoFrames = $(deleteFramesId)?.checked;
   const msg = alsoFrames
     ? `Delete "${filename}" and its extracted annotation frames?`
     : `Delete recording "${filename}"?`;
@@ -1257,10 +1339,12 @@ async function deleteLibraryVideo(filename, rowEl) {
     }
     const data = await res.json();
     rowEl?.remove();
-    const list = $('videoLibraryList');
+    const list = $(listId);
     if (list && !list.children.length) {
       list.innerHTML = '<p class="text-xs text-gray-600 py-2">No saved recordings.</p>';
     }
+    if (listId === 'parcelMediaLibraryList') loadParcelMediaLibrary();
+    else if (listId === 'videoLibraryList') loadVideoLibrary();
     if (window.lastYoutubeVideo?.filename === filename) {
       $('youtubePlayerWrap')?.classList.add('hidden');
       $('youtubePlayer')?.removeAttribute('src');
@@ -2797,6 +2881,95 @@ async function deleteInferResult(filename, el) {
     el.remove();
   } catch (e) {
     toast('Delete failed', 'error');
+  }
+}
+
+
+function showParcelSubTab(name) {
+  sessionStorage.setItem('parcelSubTab', name);
+  const cap = $('parcel-panel-capture');
+  const lib = $('parcel-panel-library');
+  const btnCap = $('parcelSubCapture');
+  const btnLib = $('parcelSubLibrary');
+  const active = 'px-4 py-2 text-sm rounded-lg border border-indigo-500 bg-indigo-600 text-white';
+  const inactive = 'px-4 py-2 text-sm rounded-lg border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700';
+  if (name === 'library') {
+    cap?.classList.add('hidden');
+    lib?.classList.remove('hidden');
+    if (btnCap) btnCap.className = inactive;
+    if (btnLib) btnLib.className = active;
+    loadParcelMediaLibrary();
+  } else {
+    lib?.classList.add('hidden');
+    cap?.classList.remove('hidden');
+    if (btnLib) btnLib.className = inactive;
+    if (btnCap) btnCap.className = active;
+  }
+}
+
+function useParcelLibraryVideo(filename) {
+  parcelSourceFile = null;
+  $('parcelVideoFile').value = '';
+  parcelServerVideo = { filename };
+  loadParcelVideos().then(() => {
+    $('parcelVideoSelect').value = filename;
+    parcelVideoSelected();
+    showParcelSubTab('capture');
+    toast('Video selected for capture', 'success');
+  });
+}
+
+async function uploadParcelLibraryVideo(files) {
+  if (!files?.length) return;
+  const status = $('parcelLibraryUploadStatus');
+  if (status) status.textContent = 'Uploading…';
+  const fd = new FormData();
+  fd.append('file', files[0]);
+  try {
+    const res = await apiFetch('/api/sources/videos/upload', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Upload failed');
+    }
+    const data = await res.json();
+    if (status) status.textContent = `Saved: ${data.filename} (${data.size_mb} MB)`;
+    $('parcelLibraryFileInput').value = '';
+    await loadParcelMediaLibrary();
+    await loadParcelVideos();
+    toast('Video added to library', 'success');
+  } catch (e) {
+    if (status) status.textContent = '';
+    toast('Upload failed: ' + e.message, 'error');
+  }
+}
+
+async function downloadParcelLibraryYoutube() {
+  const url = $('parcelLibraryYoutubeUrl')?.value?.trim();
+  if (!url) { toast('Paste a YouTube URL first', 'warn'); return; }
+  const status = $('parcelLibraryUploadStatus');
+  if (status) status.textContent = 'Downloading…';
+  try {
+    const fd = new FormData();
+    fd.append('url', url);
+    fd.append('mode', 'watch');
+    const res = await apiFetch('/api/sources/youtube', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'YouTube failed');
+    }
+    const { job_id } = await res.json();
+    setActiveJob('parcelLib', job_id, `/api/sources/youtube/cancel/${job_id}`);
+    await pollJob(`/api/sources/youtube/status/${job_id}`, (job) => {
+      if (status) status.textContent = job.message || 'Downloading…';
+    }, 'parcelLib');
+    if (status) status.textContent = '';
+    $('parcelLibraryYoutubeUrl').value = '';
+    await loadParcelMediaLibrary();
+    await loadParcelVideos();
+    toast('Video added to library', 'success');
+  } catch (e) {
+    if (status) status.textContent = '';
+    if (!isCancelledError(e.message)) toast('Download failed: ' + e.message, 'error');
   }
 }
 
