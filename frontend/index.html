@@ -266,9 +266,9 @@
               <h4 class="text-sm font-medium text-gray-300">Video library</h4>
               <p class="text-xs text-gray-600 mt-0.5">Saved recordings (YouTube downloads) — use in Infer / Parcel</p>
             </div>
-            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer" title="When deleting a video, also remove its frames from Data Sources">
               <input id="videoLibraryDeleteFrames" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-indigo-600" />
-              Also delete extracted frames
+              Also delete frames (with video)
             </label>
             <button type="button" onclick="loadVideoLibrary()"
               class="text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700">Refresh</button>
@@ -842,9 +842,9 @@
           <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
             <h3 class="font-medium text-gray-200">Media library</h3>
             <div class="flex items-center gap-3 flex-wrap">
-              <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer" title="When deleting a video, also remove its frames from Data Sources">
                 <input id="parcelLibraryDeleteFrames" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-indigo-600" />
-                Also delete extracted frames
+                Also delete frames (with video)
               </label>
               <button type="button" onclick="loadParcelMediaLibrary()" class="text-xs text-indigo-400 hover:text-indigo-300">Refresh</button>
             </div>
@@ -1277,18 +1277,26 @@ async function loadMediaLibrary(opts) {
       row.dataset.filename = v.filename;
       const playUrl = getApiBase() + v.play_url;
       const dateStr = formatVideoLibraryDate(v.modified_at);
+      const frameCount = v.extracted_frame_count ?? 0;
+      const framesLabel = frameCount
+        ? ` · <span class="text-amber-600/90">${frameCount} frame(s) in Data Sources</span>`
+        : '';
       const useBtn = showUseInCapture
         ? '<button type="button" data-action="use" class="text-xs text-emerald-400 hover:text-emerald-300 shrink-0">Use in capture</button>'
+        : '';
+      const deleteFramesBtn = frameCount
+        ? '<button type="button" data-action="delete-frames" class="text-xs text-amber-500 hover:text-amber-400 shrink-0">Delete frames</button>'
         : '';
       row.innerHTML = `
         <div class="flex items-start gap-2 flex-wrap">
           <div class="min-w-0 flex-1">
             <p class="text-sm text-gray-200 truncate" title="${escapeHtml(v.filename)}">${escapeHtml(v.filename)}</p>
-            <p class="text-xs text-gray-500">${v.size_mb ?? '?'} MB · ${dateStr}</p>
+            <p class="text-xs text-gray-500">${v.size_mb ?? '?'} MB · ${dateStr}${framesLabel}</p>
           </div>
           ${useBtn}
           <button type="button" data-action="play" class="text-xs text-indigo-400 hover:text-indigo-300 shrink-0">Play</button>
-          <button type="button" data-action="delete" class="text-xs text-red-400 hover:text-red-300 shrink-0">Delete</button>
+          ${deleteFramesBtn}
+          <button type="button" data-action="delete" class="text-xs text-red-400 hover:text-red-300 shrink-0">Delete video</button>
         </div>
         <video class="hidden w-full rounded border border-gray-700 max-h-40 bg-black" controls preload="metadata"></video>
       `;
@@ -1303,6 +1311,8 @@ async function loadMediaLibrary(opts) {
           vid.removeAttribute('src');
         }
       });
+      row.querySelector('[data-action="delete-frames"]')?.addEventListener('click', () =>
+        deleteLibraryVideoFrames(v.filename, { listId }));
       row.querySelector('[data-action="delete"]')?.addEventListener('click', () =>
         deleteLibraryVideo(v.filename, row, { listId, deleteFramesCheckboxId: deleteFramesId }));
       row.querySelector('[data-action="use"]')?.addEventListener('click', () => useParcelLibraryVideo(v.filename));
@@ -1322,12 +1332,31 @@ async function loadParcelMediaLibrary() {
   });
 }
 
+async function deleteLibraryVideoFrames(filename, opts = {}) {
+  const listId = opts.listId || 'videoLibraryList';
+  if (!confirm(`Delete all extracted annotation frames for "${filename}"?\n\nThe video file stays in the library. Images are removed from Data Sources.`)) return;
+  try {
+    const res = await apiFetch(`/api/sources/videos/${encodeURIComponent(filename)}/frames`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Delete failed');
+    }
+    const data = await res.json();
+    if (listId === 'parcelMediaLibraryList') await loadParcelMediaLibrary();
+    else if (listId === 'videoLibraryList') await loadVideoLibrary();
+    await loadGallery();
+    toast(data.frames_deleted ? `Removed ${data.frames_deleted} frame(s) from Data Sources` : 'No matching frames found', data.frames_deleted ? 'success' : 'info');
+  } catch (e) {
+    toast('Delete frames failed: ' + e.message, 'error');
+  }
+}
+
 async function deleteLibraryVideo(filename, rowEl, opts = {}) {
   const deleteFramesId = opts.deleteFramesCheckboxId || 'videoLibraryDeleteFrames';
   const listId = opts.listId || 'videoLibraryList';
   const alsoFrames = $(deleteFramesId)?.checked;
   const msg = alsoFrames
-    ? `Delete "${filename}" and its extracted annotation frames?`
+    ? `Delete "${filename}" and its extracted annotation frames from Data Sources?`
     : `Delete recording "${filename}"?`;
   if (!confirm(msg)) return;
   try {
@@ -1343,8 +1372,8 @@ async function deleteLibraryVideo(filename, rowEl, opts = {}) {
     if (list && !list.children.length) {
       list.innerHTML = '<p class="text-xs text-gray-600 py-2">No saved recordings.</p>';
     }
-    if (listId === 'parcelMediaLibraryList') loadParcelMediaLibrary();
-    else if (listId === 'videoLibraryList') loadVideoLibrary();
+    if (listId === 'parcelMediaLibraryList') await loadParcelMediaLibrary();
+    else if (listId === 'videoLibraryList') await loadVideoLibrary();
     if (window.lastYoutubeVideo?.filename === filename) {
       $('youtubePlayerWrap')?.classList.add('hidden');
       $('youtubePlayer')?.removeAttribute('src');
@@ -1356,6 +1385,7 @@ async function deleteLibraryVideo(filename, rowEl, opts = {}) {
       $('parcelSourceVideo')?.classList.add('hidden');
     }
     loadParcelVideos();
+    if (alsoFrames || data.frames_deleted) await loadGallery();
     toast(data.frames_deleted ? `Deleted video + ${data.frames_deleted} frame(s)` : 'Recording deleted', 'success');
   } catch (e) {
     toast('Delete failed: ' + e.message, 'error');
@@ -1396,12 +1426,24 @@ async function postYoutube(url, mode, progressPrefix) {
   }, jobKind);
 }
 
+async function ensureVideoFrameMeta(filename, youtubeTitle) {
+  if (!filename || !youtubeTitle) return;
+  const fd = new FormData();
+  fd.append('youtube_title', youtubeTitle);
+  try {
+    await apiFetch(`/api/sources/videos/${encodeURIComponent(filename)}/frame-meta`, { method: 'POST', body: fd });
+  } catch (e) {
+    console.warn('frame-meta update failed:', e);
+  }
+}
+
 function showYoutubePlayer(data) {
   const player = $('youtubePlayer');
   player.src = data.play_url + '?t=' + Date.now();
   $('youtubePlayerTitle').textContent = data.video;
   $('youtubePlayerWrap').classList.remove('hidden');
   window.lastYoutubeVideo = { filename: data.filename, title: data.video, play_url: data.play_url };
+  ensureVideoFrameMeta(data.filename, data.video);
 }
 
 async function downloadYoutubeWatch() {
@@ -2959,9 +3001,12 @@ async function downloadParcelLibraryYoutube() {
     }
     const { job_id } = await res.json();
     setActiveJob('parcelLib', job_id, `/api/sources/youtube/cancel/${job_id}`);
-    await pollJob(`/api/sources/youtube/status/${job_id}`, (job) => {
+    const ytResult = await pollJob(`/api/sources/youtube/status/${job_id}`, (job) => {
       if (status) status.textContent = job.message || 'Downloading…';
     }, 'parcelLib');
+    if (ytResult?.filename && ytResult?.video) {
+      await ensureVideoFrameMeta(ytResult.filename, ytResult.video);
+    }
     if (status) status.textContent = '';
     $('parcelLibraryYoutubeUrl').value = '';
     await loadParcelMediaLibrary();

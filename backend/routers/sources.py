@@ -1,11 +1,12 @@
 import asyncio
+import json
 import logging
 import re
 import shutil
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 import aiofiles
 import cv2
@@ -41,14 +42,85 @@ def _safe_stem(name: str) -> str:
     return stem or "video"
 
 
-def _delete_extracted_frames_for_stem(video_stem: str) -> int:
-    """Remove annotation frames extracted from a video (prefix: {safe_stem}_frame*.jpg)."""
-    prefix = f"{_safe_stem(video_stem)}_frame"
+FRAME_META_DIR = VIDEOS_DIR / ".frame_meta"
+
+
+def _video_meta_path(filename: str) -> Path:
+    safe_name = Path(filename).name.replace("/", "_")
+    return FRAME_META_DIR / f"{safe_name}.json"
+
+
+def _load_video_meta(filename: str) -> dict:
+    path = _video_meta_path(filename)
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_video_meta(filename: str, meta: dict) -> None:
+    FRAME_META_DIR.mkdir(parents=True, exist_ok=True)
+    _video_meta_path(filename).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+
+def _touch_video_meta(filename: str, **fields) -> dict:
+    meta = _load_video_meta(filename)
+    meta.update(fields)
+    _save_video_meta(filename, meta)
+    return meta
+
+
+def _register_frame_stem(filename: str, video_stem: str) -> None:
+    safe = _safe_stem(video_stem)
+    meta = _load_video_meta(filename)
+    stems: List[str] = list(meta.get("frame_stems") or [])
+    if safe not in stems:
+        stems.append(safe)
+    meta["frame_stems"] = stems
+    _save_video_meta(filename, meta)
+
+
+def _frame_prefixes_for_video(path: Path) -> List[str]:
+    """All frame filename prefixes that may belong to this library video."""
+    prefixes: Set[str] = {_safe_stem(path.stem)}
+    meta = _load_video_meta(path.name)
+    for s in meta.get("frame_stems") or []:
+        prefixes.add(_safe_stem(str(s)))
+    title = meta.get("youtube_title")
+    if title:
+        prefixes.add(_safe_stem(str(title)))
+    return sorted(prefixes)
+
+
+def _count_extracted_frames_for_video(path: Path) -> int:
+    seen: Set[str] = set()
+    for prefix in _frame_prefixes_for_video(path):
+        for p in FRAMES_DIR.glob(f"{prefix}_frame*.jpg"):
+            if p.is_file():
+                seen.add(p.name)
+    return len(seen)
+
+
+def _delete_extracted_frames_for_prefix(prefix: str) -> int:
     deleted = 0
-    for p in FRAMES_DIR.glob(f"{prefix}*.jpg"):
+    for p in FRAMES_DIR.glob(f"{prefix}_frame*.jpg"):
         if p.is_file():
             p.unlink(missing_ok=True)
             deleted += 1
+    return deleted
+
+
+def _delete_extracted_frames_for_stem(video_stem: str) -> int:
+    """Remove annotation frames extracted from a video (prefix: {safe_stem}_frame*.jpg)."""
+    return _delete_extracted_frames_for_prefix(_safe_stem(video_stem))
+
+
+def _delete_extracted_frames_for_video(path: Path) -> int:
+    deleted = 0
+    for prefix in _frame_prefixes_for_video(path):
+        deleted += _delete_extracted_frames_for_prefix(prefix)
     return deleted
 
 
@@ -98,6 +170,7 @@ def _download_youtube_to_videos(
         if dest.exists():
             dest = VIDEOS_DIR / f"{video_path.stem}_{int(time.time())}{video_path.suffix}"
         shutil.move(str(video_path), str(dest))
+        _touch_video_meta(dest.name, youtube_title=title)
         return dest, dest.name, title
     finally:
         if tmp_dir.exists():
@@ -131,9 +204,10 @@ def _youtube_job_worker(job_id: str, url: str, mode: str, frame_interval: int) -
             download_jobs.update_job(
                 job_id, status="running", progress=0.55, message="Extracting frames…"
             )
+            extract_stem = video_path.stem
             frames_saved, error = _extract_frames(
                 video_path,
-                title,
+                extract_stem,
                 frame_interval,
                 cancel_check=lambda: download_jobs.is_cancelled(job_id),
             )
@@ -142,6 +216,9 @@ def _youtube_job_worker(job_id: str, url: str, mode: str, frame_interval: int) -
                 return
             if error:
                 raise RuntimeError(error)
+            _register_frame_stem(filename, extract_stem)
+            # Legacy extractions used YouTube title as prefix — keep for delete/count.
+            _register_frame_stem(filename, title)
 
         result = {
             "video": title,
@@ -309,6 +386,7 @@ async def upload_video_to_library(file: UploadFile = File(...)):
         dest = VIDEOS_DIR / f"{stem}_{int(time.time())}{suffix}"
 
     VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    _touch_video_meta(dest.name, upload_stem=dest.stem)
     try:
         content = await file.read()
         async with aiofiles.open(dest, "wb") as f:
@@ -331,6 +409,7 @@ async def list_videos():
     for p in sorted(VIDEOS_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
         if p.is_file() and p.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
             st = p.stat()
+            meta = _load_video_meta(p.name)
             videos.append(
                 {
                     "filename": p.name,
@@ -338,9 +417,45 @@ async def list_videos():
                     "size_mb": round(st.st_size / 1024 / 1024, 2),
                     "modified_at": st.st_mtime,
                     "play_url": f"/api/sources/video/{p.name}",
+                    "extracted_frame_count": _count_extracted_frames_for_video(p),
+                    "youtube_title": meta.get("youtube_title"),
                 }
             )
     return {"videos": videos, "count": len(videos)}
+
+
+@router.post("/videos/{filename}/frame-meta")
+async def update_video_frame_meta(
+    filename: str,
+    youtube_title: Optional[str] = Form(None),
+):
+    """Link a library video to YouTube title / frame prefixes (for legacy frame cleanup)."""
+    path = VIDEOS_DIR / Path(filename).name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Video not found: {filename}")
+    if path.suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Not a video file")
+
+    if youtube_title and youtube_title.strip():
+        _touch_video_meta(path.name, youtube_title=youtube_title.strip())
+        _register_frame_stem(path.name, youtube_title.strip())
+    return {
+        "filename": path.name,
+        "extracted_frame_count": _count_extracted_frames_for_video(path),
+    }
+
+
+@router.delete("/videos/{filename}/frames")
+async def delete_video_frames(filename: str):
+    """Remove extracted annotation frames for a library video (keeps the video file)."""
+    path = VIDEOS_DIR / Path(filename).name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Video not found: {filename}")
+    if path.suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Not a video file")
+
+    frames_deleted = _delete_extracted_frames_for_video(path)
+    return {"filename": path.name, "frames_deleted": frames_deleted}
 
 
 @router.delete("/videos/{filename}")
@@ -355,8 +470,11 @@ async def delete_video(
     if path.suffix.lower() not in ALLOWED_VIDEO_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Not a video file")
 
-    frames_deleted = _delete_extracted_frames_for_stem(path.stem) if delete_frames else 0
+    frames_deleted = _delete_extracted_frames_for_video(path) if delete_frames else 0
     path.unlink(missing_ok=True)
+    meta_path = _video_meta_path(path.name)
+    if meta_path.is_file():
+        meta_path.unlink(missing_ok=True)
     return {"deleted": path.name, "frames_deleted": frames_deleted}
 
 

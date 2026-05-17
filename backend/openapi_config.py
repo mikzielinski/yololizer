@@ -135,9 +135,13 @@ OPERATION_DOCS: dict[tuple[str, str], dict] = {
         "summary": "List video library",
         "description": "Saved recordings in `data/uploads/videos/` (YouTube downloads and uploads).",
     },
+    ("delete", "/api/sources/videos/{filename}/frames"): {
+        "summary": "Delete extracted frames",
+        "description": "Remove annotation frames linked to this library video from `data/frames/`. Keeps the video file.",
+    },
     ("delete", "/api/sources/videos/{filename}"): {
         "summary": "Delete recording",
-        "description": "Remove from library. Set `delete_frames=true` to also remove extracted annotation frames.",
+        "description": "Remove from library. Set `delete_frames=true` to also remove extracted annotation frames from Data Sources.",
     },
     ("get", "/api/sources/video/{filename}"): {
         "summary": "Stream library video",
