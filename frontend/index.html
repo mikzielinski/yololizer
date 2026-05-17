@@ -132,6 +132,13 @@
       </svg>
       Infer
     </button>
+    <button onclick="showTab('parcel')" id="nav-parcel"
+      class="nav-item flex items-center gap-3 px-4 py-2.5 rounded-lg mx-2 text-sm font-medium transition-colors hover:bg-gray-800 text-gray-400">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+      </svg>
+      Parcel
+    </button>
   </nav>
 
   <!-- Content area -->
@@ -781,6 +788,61 @@
       </div>
     </div><!-- /tab-infer -->
 
+    <div id="tab-parcel" class="hidden flex-col flex-1 overflow-y-auto p-6 gap-6">
+      <div>
+        <h2 class="text-xl font-semibold text-white">Parcel capture</h2>
+        <p class="text-sm text-gray-500 mt-1">Button time on film → travel offset → extract window → top object clusters.</p>
+      </div>
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <h3 class="font-medium text-gray-200">Parameters</h3>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Video</label>
+            <select id="parcelVideoSelect" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" onchange="parcelVideoSelected()"></select>
+            <input id="parcelResultVideoId" type="text" placeholder="Infer result_id (optional)" class="mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200" />
+            <input id="parcelVideoFile" type="file" accept="video/*" class="mt-2 text-xs text-gray-400 w-full" onchange="parcelVideoFileSelected(this.files)" />
+          </div>
+          <video id="parcelSourceVideo" controls class="hidden w-full rounded-lg border border-gray-700 max-h-40 bg-black"></video>
+          <button type="button" onclick="setParcelButtonFromPlayhead()" id="parcelUsePlayheadBtn" class="hidden w-full py-1.5 text-xs rounded bg-gray-800 hover:bg-gray-700 text-indigo-300 border border-gray-700">Use playhead as button time</button>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Model (.pt)</label>
+            <select id="parcelModelSelect" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"></select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="text-xs text-gray-400 block mb-1">Button time on film (s)</label><input id="parcelButtonFilmSec" type="number" value="0" min="0" step="0.1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label class="text-xs text-gray-400 block mb-1">Distance button → camera (m)</label><input id="parcelDistanceM" type="number" value="30" min="0.1" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label class="text-xs text-gray-400 block mb-1">Conveyor speed (m/s, real)</label><input id="parcelSpeedMps" type="number" value="0.5" min="0.01" step="0.01" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1" title="1 s real time = this many seconds on the film">Film s per 1 s real</label>
+              <input id="parcelRealToFilm" type="number" value="0.5" min="0.01" max="10" step="0.01" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" />
+              <p class="text-[10px] text-gray-600 mt-0.5">e.g. 0.5 → 1 s real = 0.5 s on film</p>
+            </div>
+            <div><label class="text-xs text-gray-400 block mb-1">Pre-window (s)</label><input id="parcelPreWindow" type="number" value="2" min="0" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label class="text-xs text-gray-400 block mb-1">Post-window (s)</label><input id="parcelPostWindow" type="number" value="3" min="0" step="0.5" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label class="text-xs text-gray-400 block mb-1">Top clusters</label><input id="parcelTopClusters" type="number" value="4" min="1" max="20" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label class="text-xs text-gray-400 block mb-1">Frame stride</label><input id="parcelFrameStride" type="number" value="1" min="1" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            <button type="button" onclick="previewParcelTiming()" class="px-3 py-2 text-sm rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700">Preview timing</button>
+            <button type="button" onclick="runParcelCapture()" id="parcelRunBtn" class="px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium">Analyze parcel window</button>
+          </div>
+          <div id="parcelProgress" class="hidden">
+            <div class="flex justify-between text-xs text-gray-400 mb-1"><span id="parcelProgressText">…</span><span id="parcelProgressPct">0%</span></div>
+            <div class="w-full bg-gray-800 rounded-full h-2"><div id="parcelProgressBar" class="bg-indigo-500 h-2 rounded-full transition-all" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <h3 class="font-medium text-gray-200">Results</h3>
+          <pre id="parcelTimingPreview" class="text-xs text-gray-400 bg-gray-950 rounded-lg p-3 whitespace-pre-wrap">Run preview or analysis.</pre>
+          <div id="parcelClipWrap" class="hidden">
+            <video id="parcelClipVideo" controls class="w-full rounded-lg border border-gray-700 max-h-64 bg-black"></video>
+            <a id="parcelClipDownload" href="#" download class="inline-block mt-2 text-xs text-indigo-400">Download clip</a>
+          </div>
+          <div id="parcelClustersList" class="space-y-3"></div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 </div><!-- /main layout -->
@@ -965,7 +1027,7 @@ async function checkHealth() {
 // Tab navigation
 // =========================================================
 function showTab(name) {
-  const tabs = ['sources','annotate','train','models','infer'];
+  const tabs = ['sources','annotate','train','models','infer','parcel'];
   tabs.forEach(t => {
     $(`tab-${t}`).classList.add('hidden');
     const navEl = $(`nav-${t}`);
@@ -988,6 +1050,9 @@ function showTab(name) {
   } else if (name === 'infer') {
     loadInferModels();
     loadInferResults();
+  } else if (name === 'parcel') {
+    loadParcelVideos();
+    loadParcelModels();
   }
 }
 
@@ -2570,6 +2635,219 @@ async function deleteInferResult(filename, el) {
     el.remove();
   } catch (e) {
     toast('Delete failed', 'error');
+  }
+}
+
+// =========================================================
+// PARCEL CAPTURE
+// =========================================================
+let parcelSourceFile = null;
+let parcelServerVideo = null;
+
+function parcelFormParams() {
+  return {
+    button_film_sec: parseFloat($('parcelButtonFilmSec').value) || 0,
+    distance_m: parseFloat($('parcelDistanceM').value) || 30,
+    speed_m_per_s: parseFloat($('parcelSpeedMps').value) || 0.5,
+    real_to_film_ratio: parseFloat($('parcelRealToFilm').value) || 0.5,
+    pre_window_sec: parseFloat($('parcelPreWindow').value) || 2,
+    post_window_sec: parseFloat($('parcelPostWindow').value) || 3,
+    top_clusters: parseInt($('parcelTopClusters').value, 10) || 4,
+    frame_stride: parseInt($('parcelFrameStride').value, 10) || 1,
+  };
+}
+
+function formatParcelTiming(data) {
+  return [
+    `Button on film:     ${data.button_film_sec ?? '—'} s`,
+    `Travel (real):      ${data.travel_real_sec ?? '—'} s`,
+    `Travel (film):      ${data.travel_film_sec ?? '—'} s  (× ${data.real_to_film_ratio ?? '—'})`,
+    `Arrival on film:    ${data.arrival_film_sec ?? '—'} s`,
+    `Window (film):      ${data.window_start_film_sec ?? '—'} – ${data.window_end_film_sec ?? '—'} s`,
+    data.hint ? `\n${data.hint}` : '',
+  ].join('\n');
+}
+
+async function loadParcelVideos() {
+  try {
+    const res = await apiFetch('/api/sources/videos');
+    const data = await res.json();
+    const sel = $('parcelVideoSelect');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— select video —</option>' +
+      (data.videos || []).map(v =>
+        `<option value="${escapeHtml(v.filename)}">${escapeHtml(v.filename)}</option>`
+      ).join('');
+    if (cur) sel.value = cur;
+  } catch (e) { /* ignore */ }
+}
+
+async function loadParcelModels() {
+  try {
+    const res = await apiFetch('/api/infer/models');
+    const data = await res.json();
+    const sel = $('parcelModelSelect');
+    const cur = sel.value;
+    sel.innerHTML = data.models.length
+      ? data.models.map(m => `<option value="${escapeHtml(m.filename)}">${escapeHtml(m.filename)} (${m.size_mb} MB)</option>`).join('')
+      : '<option value="">— upload a model first —</option>';
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  } catch (e) { /* ignore */ }
+}
+
+function parcelVideoSelected() {
+  const fn = $('parcelVideoSelect').value;
+  parcelSourceFile = null;
+  $('parcelVideoFile').value = '';
+  const vid = $('parcelSourceVideo');
+  if (!fn) {
+    parcelServerVideo = null;
+    vid.classList.add('hidden');
+    vid.removeAttribute('src');
+    $('parcelUsePlayheadBtn').classList.add('hidden');
+    return;
+  }
+  parcelServerVideo = { filename: fn };
+  vid.src = getApiBase() + `/api/sources/video/${encodeURIComponent(fn)}?t=${Date.now()}`;
+  vid.classList.remove('hidden');
+  $('parcelUsePlayheadBtn').classList.remove('hidden');
+}
+
+function parcelVideoFileSelected(files) {
+  if (!files || !files.length) return;
+  parcelSourceFile = files[0];
+  parcelServerVideo = null;
+  $('parcelVideoSelect').value = '';
+  const vid = $('parcelSourceVideo');
+  vid.src = URL.createObjectURL(parcelSourceFile);
+  vid.classList.remove('hidden');
+  $('parcelUsePlayheadBtn').classList.remove('hidden');
+}
+
+function setParcelButtonFromPlayhead() {
+  const vid = $('parcelSourceVideo');
+  if (!vid || vid.classList.contains('hidden')) return;
+  $('parcelButtonFilmSec').value = (vid.currentTime || 0).toFixed(2);
+  toast('Button time set from playhead', 'success');
+}
+
+async function previewParcelTiming() {
+  const p = parcelFormParams();
+  const fd = new FormData();
+  Object.entries(p).forEach(([k, v]) => fd.append(k, v));
+  try {
+    const res = await apiFetch('/api/parcel/preview-timing', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Preview failed');
+    }
+    const data = await res.json();
+    $('parcelTimingPreview').textContent = formatParcelTiming(data);
+  } catch (e) {
+    toast('Timing preview failed: ' + e.message, 'error');
+  }
+}
+
+function parcelFrameUrl(captureId, frameIndex, bbox) {
+  const base = getApiBase() + `/api/parcel/frame/${encodeURIComponent(captureId)}/${frameIndex}`;
+  if (!bbox || bbox.length < 4) return base;
+  const [x1, y1, x2, y2] = bbox;
+  return `${base}?x1=${x1}&y1=${y1}&x2=${x2}&y2=${y2}`;
+}
+
+function renderParcelResult(result) {
+  if (!result) return;
+  $('parcelTimingPreview').textContent = formatParcelTiming(result);
+
+  const clipWrap = $('parcelClipWrap');
+  if (result.clip_url) {
+    const clipUrl = getApiBase() + result.clip_url + '?t=' + Date.now();
+    $('parcelClipVideo').src = clipUrl;
+    const dl = $('parcelClipDownload');
+    dl.href = clipUrl;
+    dl.download = `parcel_${result.capture_id}.mp4`;
+    clipWrap.classList.remove('hidden');
+  } else {
+    clipWrap.classList.add('hidden');
+  }
+
+  const list = $('parcelClustersList');
+  list.innerHTML = '';
+  const clusters = result.clusters || [];
+  if (!clusters.length) {
+    list.innerHTML = '<p class="text-xs text-gray-600">No clusters in window.</p>';
+    return;
+  }
+  clusters.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'flex gap-3 bg-gray-950 border border-gray-800 rounded-lg p-3';
+    const imgSrc = parcelFrameUrl(result.capture_id, c.best_frame, c.best_bbox);
+    card.innerHTML = `
+      <img src="${imgSrc}" alt="cluster ${c.rank}" class="w-28 h-20 object-cover rounded border border-gray-700 shrink-0 bg-black" loading="lazy" />
+      <div class="min-w-0 flex-1 text-xs space-y-1">
+        <div class="font-medium text-indigo-300">#${c.rank} ${escapeHtml(c.class_name)} <span class="text-gray-500">track ${c.track_id}</span></div>
+        <p class="text-gray-500">Frames ${c.frame_start}–${c.frame_end} · best ${c.best_frame} · score ${c.score}</p>
+        <p class="text-gray-500">${c.detection_count} detections · conf ${(c.mean_confidence * 100).toFixed(1)}%</p>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function buildParcelAnalyzeFormData() {
+  const model = $('parcelModelSelect').value;
+  if (!model) throw new Error('Select a model');
+  const resultId = $('parcelResultVideoId').value.trim();
+  if (!parcelSourceFile && !parcelServerVideo && !resultId) {
+    throw new Error('Select a video, upload a file, or enter infer result_id');
+  }
+  const fd = new FormData();
+  fd.append('model_filename', model);
+  const p = parcelFormParams();
+  Object.entries(p).forEach(([k, v]) => fd.append(k, v));
+  if (resultId) {
+    fd.append('result_video_id', resultId);
+  } else if (parcelServerVideo) {
+    fd.append('source_filename', parcelServerVideo.filename);
+  } else {
+    fd.append('file', parcelSourceFile);
+  }
+  return fd;
+}
+
+async function runParcelCapture() {
+  let fd;
+  try {
+    fd = buildParcelAnalyzeFormData();
+  } catch (e) {
+    toast(e.message, 'warn');
+    return;
+  }
+
+  const btn = $('parcelRunBtn');
+  btn.disabled = true;
+  setProgressUi('parcelProgress', 'parcelProgressBar', 'parcelProgressText', 'parcelProgressPct', true, 0, 'Starting…', true);
+
+  try {
+    const res = await apiFetch('/api/parcel/analyze', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Analysis failed');
+    }
+    const { job_id } = await res.json();
+    setActiveJob('parcel', job_id, `/api/parcel/cancel/${job_id}`);
+    const result = await pollJob(`/api/parcel/status/${job_id}`, (job) => {
+      setProgressUi('parcelProgress', 'parcelProgressBar', 'parcelProgressText', 'parcelProgressPct', true,
+        job.progress, job.message || 'Analyzing…', job.status === 'queued');
+    }, 'parcel');
+    setProgressUi('parcelProgress', 'parcelProgressBar', 'parcelProgressText', 'parcelProgressPct', true, 1, 'Complete', false);
+    renderParcelResult(result);
+    toast('Parcel analysis complete', 'success');
+  } catch (e) {
+    if (!isCancelledError(e.message)) toast('Parcel failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => setProgressUi('parcelProgress', 'parcelProgressBar', 'parcelProgressText', 'parcelProgressPct', false, 0, ''), 1500);
   }
 }
 

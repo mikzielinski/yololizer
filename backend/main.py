@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.routers import inference, labels, models, sources, training
+from backend.routers import inference, labels, models, parcel, sources, training
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,6 +34,7 @@ app.include_router(labels.router)
 app.include_router(training.router)
 app.include_router(models.router)
 app.include_router(inference.router)
+app.include_router(parcel.router)
 
 # Serve frontend
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
