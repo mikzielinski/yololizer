@@ -174,6 +174,10 @@
         <input id="imgFileInput" type="file" multiple accept="image/*" class="hidden" onchange="uploadImages(this.files)" />
         <div id="imgUploadStatus" class="mt-2 text-sm text-gray-400"></div>
         <!-- Thumbnail gallery -->
+        <div class="mt-4 flex items-center justify-between gap-2 flex-wrap">
+          <span class="text-xs text-gray-500">Hover a thumbnail → <span class="text-red-400">×</span> to remove</span>
+          <button type="button" onclick="deleteAllExtractedFrames()" class="text-xs text-amber-500 hover:text-amber-400">Delete all extracted frames (F)</button>
+        </div>
         <div id="imgGallery" class="mt-4 grid grid-cols-6 gap-2"></div>
         <div id="imgCount" class="mt-2 text-xs text-gray-500"></div>
       </div>
@@ -1105,13 +1109,27 @@ function toast(msg, type = 'info') {
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 3000);
 }
 
+function formatApiErrorDetail(detail, fallback) {
+  if (detail == null) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(d => d.msg || d.message || JSON.stringify(d)).join('; ');
+  }
+  if (typeof detail === 'object') return detail.message || detail.msg || JSON.stringify(detail);
+  return String(detail);
+}
+
 async function apiFetch(path, opts = {}) {
   const res = await fetch(getApiBase() + path, opts);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    throw new Error(formatApiErrorDetail(body.detail, `HTTP ${res.status}`));
   }
   return res;
+}
+
+function deleteImageUrl(filename) {
+  return `/api/sources/images?filename=${encodeURIComponent(filename)}`;
 }
 
 function formatElapsed(sec) {
@@ -1215,26 +1233,76 @@ async function uploadImages(files) {
   }
 }
 
+async function deleteSourceImage(filename, isFrame) {
+  const kind = isFrame ? 'extracted frame' : 'image';
+  if (!confirm('Delete ' + kind + ' "' + filename + '"?')) return;
+  try {
+    await apiFetch(deleteImageUrl(filename), { method: 'DELETE' });
+    await loadGallery();
+    toast('Image removed', 'success');
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function deleteAllExtractedFrames() {
+  const res = await apiFetch('/api/sources/images');
+  const data = await res.json();
+  const frames = (data.images || []).filter(i => i.is_frame);
+  if (!frames.length) {
+    toast('No extracted frames in gallery', 'info');
+    return;
+  }
+  if (!confirm(`Delete all ${frames.length} extracted frame(s) from Data Sources?`)) return;
+  let deleted = 0;
+  let failed = 0;
+  for (const img of frames) {
+    try {
+      const r = await apiFetch(deleteImageUrl(img.filename), { method: 'DELETE' });
+      if (r.ok) deleted++;
+      else failed++;
+    } catch (e) {
+      failed++;
+    }
+  }
+  await loadGallery();
+  toast(
+    failed ? `Removed ${deleted} frame(s), ${failed} failed` : `Removed ${deleted} extracted frame(s)`,
+    failed ? 'warn' : 'success'
+  );
+}
+
 async function loadGallery() {
   try {
     const res = await apiFetch('/api/sources/images');
     const data = await res.json();
     const gallery = $('imgGallery');
     gallery.innerHTML = '';
+    const frameCount = (data.images || []).filter(i => i.is_frame).length;
+    if (!data.images?.length) {
+      gallery.innerHTML = '<p class="text-xs text-gray-600 col-span-6 py-4 text-center">No images yet</p>';
+    }
     data.images.forEach(img => {
       const el = document.createElement('div');
       el.className = 'relative group rounded overflow-hidden border border-gray-800 bg-gray-900';
       el.innerHTML = `
-        <img src="/api/sources/image/${encodeURIComponent(img.filename)}"
-          class="w-full h-16 object-cover" loading="lazy" title="${img.filename}" />
-        <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
-          <span class="text-xs text-white px-1 pb-0.5 truncate w-full">${img.filename}</span>
+        <img src="${getApiBase()}/api/sources/image/${encodeURIComponent(img.filename)}"
+          class="w-full h-16 object-cover pointer-events-none" loading="lazy" title="${escapeHtml(img.filename)}" alt="" />
+        <button type="button" class="absolute top-0.5 right-0.5 w-6 h-6 rounded bg-red-600/95 hover:bg-red-500 text-white text-sm leading-none opacity-90 group-hover:opacity-100 transition-opacity z-10 shadow" title="Delete this image">×</button>
+        <div class="absolute inset-x-0 bottom-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          <span class="text-[10px] text-white px-1 py-0.5 truncate block">${escapeHtml(img.filename)}</span>
         </div>
-        ${img.is_frame ? '<div class="absolute top-0 right-0 bg-amber-600 text-xs text-white px-1 leading-4">F</div>' : ''}
+        ${img.is_frame ? '<div class="absolute top-0 left-0 bg-amber-600 text-[10px] text-white px-1 leading-4 pointer-events-none">F</div>' : ''}
       `;
+      el.querySelector('button')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSourceImage(img.filename, img.is_frame);
+      });
       gallery.appendChild(el);
     });
-    $('imgCount').textContent = `${data.count} image(s) total`;
+    const uploadCount = (data.count || 0) - frameCount;
+    $('imgCount').textContent = `${data.count} image(s) total` +
+      (frameCount ? ` · ${frameCount} extracted frame(s) · ${uploadCount} upload(s)` : '');
   } catch (err) {
     console.warn('Gallery load failed:', err);
   }

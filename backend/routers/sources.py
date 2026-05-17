@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
+from urllib.parse import unquote
 
 import aiofiles
 import cv2
@@ -543,6 +544,42 @@ async def webcam_capture():
     return {"filename": fname}
 
 
+def _resolve_image_path(filename: str) -> Optional[Path]:
+    """Locate an image in uploads/ or frames/ (basename only)."""
+    decoded = unquote((filename or "").strip())
+    safe = Path(decoded).name
+    if not safe or ".." in safe:
+        return None
+    for directory in (UPLOADS_DIR, FRAMES_DIR):
+        path = directory / safe
+        if path.exists() and path.is_file() and path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS:
+            return path
+    return None
+
+
+def _delete_image_file(filename: str) -> dict:
+    path = _resolve_image_path(filename)
+    if not path:
+        raise HTTPException(status_code=404, detail=f"Image not found: {filename}")
+    path.unlink(missing_ok=True)
+    return {
+        "deleted": path.name,
+        "is_frame": path.parent == FRAMES_DIR,
+    }
+
+
+@router.delete("/images")
+async def delete_image_query(filename: str = Query(..., description="Image filename to delete")):
+    """Remove one uploaded image or extracted frame (query param — safe for special characters)."""
+    return _delete_image_file(filename)
+
+
+@router.delete("/images/{filename:path}")
+async def delete_image(filename: str):
+    """Remove one uploaded image or extracted frame from Data Sources."""
+    return _delete_image_file(filename)
+
+
 @router.get("/images")
 async def list_images():
     """List all uploaded images (including frames)."""
@@ -569,10 +606,7 @@ async def list_images():
 @router.get("/image/{filename:path}")
 async def serve_image(filename: str):
     """Serve an image file by name."""
-    # Try uploads dir first, then frames dir
-    for directory in [UPLOADS_DIR, FRAMES_DIR]:
-        path = directory / filename
-        if path.exists() and path.is_file():
-            return FileResponse(str(path))
-
-    raise HTTPException(status_code=404, detail=f"Image not found: {filename}")
+    path = _resolve_image_path(Path(filename).name)
+    if not path:
+        raise HTTPException(status_code=404, detail=f"Image not found: {filename}")
+    return FileResponse(str(path))

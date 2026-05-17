@@ -104,6 +104,14 @@ OPERATION_DOCS: dict[tuple[str, str], dict] = {
         "summary": "List images",
         "description": "All images in uploads and extracted frames (`data/frames/`).",
     },
+    ("delete", "/api/sources/images"): {
+        "summary": "Delete image (query)",
+        "description": "Remove one upload or extracted frame. Pass `filename` query param (preferred for special characters).",
+    },
+    ("delete", "/api/sources/images/{filename}"): {
+        "summary": "Delete image (path)",
+        "description": "Remove one upload or extracted frame from Data Sources (`data/uploads/` or `data/frames/`).",
+    },
     ("get", "/api/sources/image/{filename}"): {
         "summary": "Serve image",
         "description": "JPEG/PNG file by filename (searches uploads and frames).",
